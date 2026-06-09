@@ -1,6 +1,6 @@
 """GATE Study OS - FastAPI backend (MongoDB)."""
-from fastapi import FastAPI, APIRouter, Request, Response, HTTPException, Depends, Query, UploadFile, File, Form
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi import FastAPI, APIRouter, Request, HTTPException, Depends, Query, UploadFile, File, Form
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -19,7 +19,7 @@ from google_auth_oauthlib.flow import Flow
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request as GoogleRequest
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseUpload
+from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -886,7 +886,11 @@ async def resource_view(resource_id: str, user=Depends(get_current_user)):
             drive_file_id = m.group(1)
 
     if drive_file_id:
-        embed_url = f"https://drive.google.com/file/d/{drive_file_id}/preview"
+        # We now stream the file through our own backend (avoids Google Drive
+        # third-party-cookie iframe issues in Brave/Chrome). The frontend
+        # iframes our /stream URL and the browser renders the PDF natively.
+        backend_base = str(GOOGLE_DRIVE_REDIRECT_URI).split("/api/")[0] if GOOGLE_DRIVE_REDIRECT_URI else ""
+        embed_url = f"{backend_base}/api/resources/{resource_id}/stream"
         web_view = res.get("external_url", "")
         if res.get("drive_file_id"):
             service = await _build_drive_service(user["user_id"])
@@ -902,6 +906,45 @@ async def resource_view(resource_id: str, user=Depends(get_current_user)):
 
     # Generic external URL — embed only if same-origin friendly (most won't be due to X-Frame-Options)
     return ok({"embed_url": res.get("external_url", ""), "view_url": res.get("external_url", ""), "kind": "external"})
+
+
+@api.get("/resources/{resource_id}/stream")
+async def resource_stream(resource_id: str, user=Depends(get_current_user)):
+    """Stream a resource file from the user's Drive through our backend so the
+    browser can render it inline (no third-party cookies required)."""
+    res = await db.resources.find_one(
+        {"resource_id": resource_id, "user_id": user["user_id"]}, {"_id": 0}
+    )
+    if not res:
+        return err("not_found", "Resource not found", 404)
+    drive_file_id = res.get("drive_file_id")
+    if not drive_file_id:
+        return err("no_drive_file", "Resource is not stored in Drive", 400)
+    service = await _build_drive_service(user["user_id"])
+    if not service:
+        return err("drive_not_connected", "Drive not connected", 400)
+    try:
+        meta = service.files().get(
+            fileId=drive_file_id, fields="mimeType,name,size",
+        ).execute()
+        buf = io.BytesIO()
+        downloader = MediaIoBaseDownload(buf, service.files().get_media(fileId=drive_file_id))
+        done = False
+        while not done:
+            _status, done = downloader.next_chunk()
+        buf.seek(0)
+        return Response(
+            content=buf.read(),
+            media_type=meta.get("mimeType", "application/octet-stream"),
+            headers={
+                "Content-Disposition": f'inline; filename="{meta.get("name", "file")}"',
+                "Cache-Control": "private, max-age=300",
+                "X-Frame-Options": "SAMEORIGIN",
+            },
+        )
+    except Exception as e:
+        logger.error(f"Drive stream failed for {resource_id}: {e}")
+        return err("stream_failed", str(e), 502)
 
 
 # ---------- Dashboard / Analytics ----------
