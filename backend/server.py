@@ -997,10 +997,14 @@ async def on_startup():
 
 async def _migrate_v2_split_subjects() -> None:
     """Idempotent migration: split Discrete Math out of Engineering Math, and
-    split Programming and Data Structures into C Programming + Data Structures."""
+    split Programming and Data Structures into C Programming + Data Structures.
+    Then align topics to the official GATE CS 2026 syllabus."""
     await _split_discrete_math_out()
     await _split_pad_into_cp_and_ds()
     await _reorder_subjects()
+    await _align_topics_to_official_syllabus()
+    await _merge_legacy_topics()
+    await _delete_empty_legacy_topics()
 
 
 async def _split_discrete_math_out() -> None:
@@ -1117,6 +1121,314 @@ async def _reorder_subjects() -> None:
     ]
     for i, name in enumerate(desired):
         await db.subjects.update_one({"name": name}, {"$set": {"order": i}})
+
+
+# Official GATE CS 2026 syllabus topics (per Subject).
+# Engineering Mathematics is intentionally kept as-is in current DB; Discrete
+# Mathematics remains a separate subject. Topics below match the official PDF.
+OFFICIAL_SYLLABUS_V3: Dict[str, List[str]] = {
+    "Discrete Mathematics": [
+        "Propositional and First Order Logic",
+        "Sets, Relations, Functions, Partial Orders & Lattices",
+        "Monoids & Groups",
+        "Graphs: Connectivity, Matching, Colouring",
+        "Combinatorics: Counting, Recurrence Relations, Generating Functions",
+    ],
+    "Digital Logic": [
+        "Boolean Algebra",
+        "Combinational Circuits",
+        "Sequential Circuits",
+        "Minimization",
+        "Number Representations & Computer Arithmetic",
+    ],
+    "Computer Organization and Architecture": [
+        "Machine Instructions & Addressing Modes",
+        "ALU, Data-path & Control Unit",
+        "Instruction Pipelining & Pipeline Hazards",
+        "Memory Hierarchy: Cache, Main, Secondary",
+        "I/O Interface (Interrupt & DMA)",
+    ],
+    "C Programming": [
+        "Programming in C",
+        "Recursion",
+        "Pointers",
+        "Arrays & Strings",
+        "Structures & Unions",
+        "Dynamic Memory",
+    ],
+    "Data Structures": [
+        "Arrays",
+        "Stacks",
+        "Queues",
+        "Linked Lists",
+        "Trees",
+        "Binary Search Trees",
+        "Binary Heaps",
+        "Graphs",
+    ],
+    "Algorithms": [
+        "Asymptotic Complexity (Time & Space)",
+        "Searching",
+        "Sorting",
+        "Hashing",
+        "Greedy",
+        "Dynamic Programming",
+        "Divide & Conquer",
+        "Graph Traversals",
+        "Minimum Spanning Trees",
+        "Shortest Paths",
+    ],
+    "Theory of Computation": [
+        "Regular Expressions & Finite Automata",
+        "Context-Free Grammars & Push-Down Automata",
+        "Regular & Context-Free Languages, Pumping Lemma",
+        "Turing Machines & Undecidability",
+    ],
+    "Compiler Design": [
+        "Lexical Analysis",
+        "Parsing",
+        "Syntax-Directed Translation",
+        "Runtime Environments",
+        "Intermediate Code Generation",
+        "Local Optimization",
+        "Data Flow Analyses (Constant Propagation, Liveness, Common Sub-expression)",
+    ],
+    "Operating Systems": [
+        "System Calls",
+        "Processes, Threads & IPC",
+        "Concurrency & Synchronization",
+        "Deadlock",
+        "CPU & I/O Scheduling",
+        "Memory Management & Virtual Memory",
+        "File Systems",
+    ],
+    "Databases": [
+        "ER Model",
+        "Relational Algebra, Tuple Calculus, SQL",
+        "Integrity Constraints & Normal Forms",
+        "File Organization & Indexing (B / B+ Trees)",
+        "Transactions & Concurrency Control",
+    ],
+    "Computer Networks": [
+        "Layering: OSI & TCP/IP",
+        "Packet, Circuit & Virtual-Circuit Switching",
+        "Data Link Layer: Framing, Error Detection, MAC, Ethernet Bridging",
+        "Routing Protocols: Shortest Path, Flooding, Distance Vector, Link State",
+        "IP Addressing, IPv4, CIDR, Fragmentation",
+        "IP Support Protocols (ARP, DHCP, ICMP, NAT)",
+        "Transport Layer: Flow & Congestion Control, UDP, TCP, Sockets",
+        "Application Layer: DNS, SMTP, HTTP, FTP, Email",
+    ],
+}
+
+
+async def _align_topics_to_official_syllabus() -> None:
+    """Idempotent upsert: ensure each subject has the official topic list.
+    - If topic with that name exists, just (re)set its order.
+    - If not, insert it.
+    - Does NOT delete legacy topics here (handled by _delete_empty_legacy_topics).
+    """
+    for subject_name, topics in OFFICIAL_SYLLABUS_V3.items():
+        subj = await db.subjects.find_one({"name": subject_name}, {"_id": 0})
+        if not subj:
+            continue
+        sid = subj["subject_id"]
+        for j, t_name in enumerate(topics):
+            existing = await db.topics.find_one(
+                {"subject_id": sid, "name": t_name}, {"_id": 0}
+            )
+            if existing:
+                await db.topics.update_one(
+                    {"topic_id": existing["topic_id"]}, {"$set": {"order": j}}
+                )
+            else:
+                await db.topics.insert_one({
+                    "topic_id": new_id("top"), "subject_id": sid,
+                    "name": t_name, "order": j, "created_at": iso(now_utc()),
+                })
+        # push legacy (non-official) topics to the bottom while preserving them
+        legacy = await db.topics.find(
+            {"subject_id": sid, "name": {"$nin": topics}}, {"_id": 0}
+        ).to_list(500)
+        for k, lt in enumerate(legacy):
+            await db.topics.update_one(
+                {"topic_id": lt["topic_id"]},
+                {"$set": {"order": len(topics) + k}},
+            )
+
+
+# Legacy topic name → official topic name. Used to merge old seed topics into
+# the official ones, moving all attached questions/PYQs/notes/mistakes over.
+LEGACY_TOPIC_REMAP: Dict[str, Dict[str, str]] = {
+    "Discrete Mathematics": {
+        "Sets & Relations": "Sets, Relations, Functions, Partial Orders & Lattices",
+        "Combinatorics": "Combinatorics: Counting, Recurrence Relations, Generating Functions",
+        "Graph Theory": "Graphs: Connectivity, Matching, Colouring",
+        "Propositional & Predicate Logic": "Propositional and First Order Logic",
+        "Group Theory": "Monoids & Groups",
+    },
+    "Digital Logic": {
+        "Number Systems": "Number Representations & Computer Arithmetic",
+    },
+    "Computer Organization and Architecture": {
+        "Machine Instructions": "Machine Instructions & Addressing Modes",
+        "ALU & Datapath": "ALU, Data-path & Control Unit",
+        "Pipelining": "Instruction Pipelining & Pipeline Hazards",
+        "Memory Hierarchy": "Memory Hierarchy: Cache, Main, Secondary",
+        "I/O Interface": "I/O Interface (Interrupt & DMA)",
+    },
+    "C Programming": {
+        "C Basics": "Programming in C",
+        "Functions & Recursion": "Recursion",
+    },
+    "Data Structures": {
+        "Heaps": "Binary Heaps",
+        "Stacks & Queues": "Stacks",  # split — questions land in Stacks
+    },
+    "Algorithms": {
+        "Asymptotic Analysis": "Asymptotic Complexity (Time & Space)",
+        "Searching & Sorting": "Searching",  # split — questions land in Searching
+        "Graph Algorithms": "Graph Traversals",
+    },
+    "Theory of Computation": {
+        "Regular Languages": "Regular Expressions & Finite Automata",
+        "Context-Free Languages": "Context-Free Grammars & Push-Down Automata",
+        "Pushdown Automata": "Context-Free Grammars & Push-Down Automata",
+        "Turing Machines": "Turing Machines & Undecidability",
+        "Undecidability": "Turing Machines & Undecidability",
+    },
+    "Compiler Design": {
+        "Syntax-Directed Translation": "Syntax-Directed Translation",  # identity, kept
+        "Intermediate Code": "Intermediate Code Generation",
+        "Code Optimization": "Local Optimization",
+    },
+    "Operating Systems": {
+        "Processes & Threads": "Processes, Threads & IPC",
+        "CPU Scheduling": "CPU & I/O Scheduling",
+        "Synchronization": "Concurrency & Synchronization",
+        "Deadlocks": "Deadlock",
+        "Memory Management": "Memory Management & Virtual Memory",
+    },
+    "Databases": {
+        "Relational Algebra": "Relational Algebra, Tuple Calculus, SQL",
+        "SQL": "Relational Algebra, Tuple Calculus, SQL",
+        "Normalization": "Integrity Constraints & Normal Forms",
+        "Transactions & Concurrency": "Transactions & Concurrency Control",
+        "Indexing": "File Organization & Indexing (B / B+ Trees)",
+    },
+    "Computer Networks": {
+        "OSI & TCP/IP": "Layering: OSI & TCP/IP",
+        "Physical Layer": "Packet, Circuit & Virtual-Circuit Switching",
+        "Data Link Layer": "Data Link Layer: Framing, Error Detection, MAC, Ethernet Bridging",
+        "Network Layer": "IP Addressing, IPv4, CIDR, Fragmentation",
+        "Transport Layer": "Transport Layer: Flow & Congestion Control, UDP, TCP, Sockets",
+        "Application Layer": "Application Layer: DNS, SMTP, HTTP, FTP, Email",
+    },
+}
+
+# Cross-subject moves: e.g., Hashing moves from Data Structures (legacy) to
+# Algorithms (official syllabus). Format: legacy_topic_name → (target_subject_name, target_topic_name)
+CROSS_SUBJECT_MOVES: Dict[str, tuple] = {
+    "Hashing": ("Algorithms", "Hashing"),  # only matters when legacy lived under Data Structures
+}
+
+
+async def _merge_legacy_topics() -> None:
+    """For each subject, merge legacy topics into their official equivalents:
+    move questions/pyqs/notes/mistakes to the official topic, then delete the
+    legacy topic. Idempotent."""
+    for subject_name, remap in LEGACY_TOPIC_REMAP.items():
+        subj = await db.subjects.find_one({"name": subject_name}, {"_id": 0})
+        if not subj:
+            continue
+        sid = subj["subject_id"]
+        for old_name, new_name in remap.items():
+            old = await db.topics.find_one({"subject_id": sid, "name": old_name}, {"_id": 0})
+            if not old:
+                continue
+            new = await db.topics.find_one({"subject_id": sid, "name": new_name}, {"_id": 0})
+            if not new:
+                continue
+            set_fields = {"subject_id": sid, "topic_id": new["topic_id"]}
+            await db.questions.update_many({"topic_id": old["topic_id"]}, {"$set": set_fields})
+            await db.pyqs.update_many({"topic_id": old["topic_id"]}, {"$set": set_fields})
+            await db.mistakes.update_many({"topic_id": old["topic_id"]}, {"$set": set_fields})
+            await db.topics.delete_one({"topic_id": old["topic_id"]})
+
+    # Cross-subject moves (e.g., Hashing legacy under Data Structures → Algorithms)
+    for old_name, (tgt_subject, tgt_topic) in CROSS_SUBJECT_MOVES.items():
+        target_subj = await db.subjects.find_one({"name": tgt_subject}, {"_id": 0})
+        if not target_subj:
+            continue
+        target = await db.topics.find_one(
+            {"subject_id": target_subj["subject_id"], "name": tgt_topic}, {"_id": 0}
+        )
+        if not target:
+            continue
+        # find any same-named legacy topics in OTHER subjects
+        legacy_topics = await db.topics.find(
+            {"name": old_name, "subject_id": {"$ne": target_subj["subject_id"]}}, {"_id": 0}
+        ).to_list(50)
+        for lt in legacy_topics:
+            set_fields = {"subject_id": target_subj["subject_id"], "topic_id": target["topic_id"]}
+            await db.questions.update_many({"topic_id": lt["topic_id"]}, {"$set": set_fields})
+            await db.pyqs.update_many({"topic_id": lt["topic_id"]}, {"$set": set_fields})
+            await db.mistakes.update_many({"topic_id": lt["topic_id"]}, {"$set": set_fields})
+            await db.topics.delete_one({"topic_id": lt["topic_id"]})
+
+
+async def _delete_empty_legacy_topics() -> None:
+    """Remove any topic that is NOT in the official syllabus list AND has no
+    content (no questions/pyqs/notes/mistakes referencing it)."""
+    for subject_name, official_topics in OFFICIAL_SYLLABUS_V3.items():
+        subj = await db.subjects.find_one({"name": subject_name}, {"_id": 0})
+        if not subj:
+            continue
+        extras = await db.topics.find(
+            {"subject_id": subj["subject_id"], "name": {"$nin": official_topics}}, {"_id": 0}
+        ).to_list(500)
+        for t in extras:
+            tid = t["topic_id"]
+            refs = (
+                await db.questions.count_documents({"topic_id": tid})
+                + await db.pyqs.count_documents({"topic_id": tid})
+                + await db.question_notes.count_documents({"question_id": {"$in": []}})  # noop
+                + await db.mistakes.count_documents({"topic_id": tid})
+            )
+            if refs == 0:
+                await db.topics.delete_one({"topic_id": tid})
+    """Idempotent upsert: ensure each subject has the official topic list.
+    - If topic with that name exists, just (re)set its order.
+    - If not, insert it.
+    - Does NOT delete legacy topics (preserves any user content tied to them).
+    """
+    for subject_name, topics in OFFICIAL_SYLLABUS_V3.items():
+        subj = await db.subjects.find_one({"name": subject_name}, {"_id": 0})
+        if not subj:
+            continue
+        sid = subj["subject_id"]
+        for j, t_name in enumerate(topics):
+            existing = await db.topics.find_one(
+                {"subject_id": sid, "name": t_name}, {"_id": 0}
+            )
+            if existing:
+                await db.topics.update_one(
+                    {"topic_id": existing["topic_id"]}, {"$set": {"order": j}}
+                )
+            else:
+                await db.topics.insert_one({
+                    "topic_id": new_id("top"), "subject_id": sid,
+                    "name": t_name, "order": j, "created_at": iso(now_utc()),
+                })
+        # push legacy (non-official) topics to the bottom while preserving them
+        legacy = await db.topics.find(
+            {"subject_id": sid, "name": {"$nin": topics}}, {"_id": 0}
+        ).to_list(500)
+        for k, lt in enumerate(legacy):
+            await db.topics.update_one(
+                {"topic_id": lt["topic_id"]},
+                {"$set": {"order": len(topics) + k}},
+            )
 
 @app.on_event("shutdown")
 async def on_shutdown():

@@ -32,7 +32,7 @@ export default function Layout({ children }) {
         >
           <GraduationCap className="w-5 h-5" />
           <div>
-            <div className="text-sm font-bold tracking-tight leading-none">Study OS</div>
+            <div className="text-sm font-bold tracking-tight leading-none">GATEPREP</div>
             <div className="text-[10px] text-muted-foreground mono mt-0.5">GATE · CSE</div>
           </div>
         </div>

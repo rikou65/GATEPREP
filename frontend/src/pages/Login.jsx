@@ -17,7 +17,7 @@ export default function Login() {
       <header className="relative z-10 px-8 py-6 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <GraduationCap className="w-6 h-6" />
-          <span className="font-bold tracking-tight">GATE Study OS</span>
+          <span className="font-bold tracking-tight">GATEPREP</span>
         </div>
         <span className="text-xs mono text-muted-foreground">v1.0</span>
       </header>
