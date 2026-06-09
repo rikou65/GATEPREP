@@ -82,7 +82,7 @@ class TestAuthGating:
         r = requests.get(f"{API}/auth/me", headers=admin_headers)
         assert r.status_code == 200
         u = r.json()["data"]["user"]
-        assert u["is_admin"] is True
+        assert u["is_admin"] == True
 
 
 # --------- Dashboard / Questions list ---------
@@ -114,7 +114,7 @@ class TestAttempts:
                           json={"selected_answer": mcq["correct_answer"], "time_taken": 5})
         assert r.status_code == 200
         d = r.json()["data"]
-        assert d["attempt"]["is_correct"] is True
+        assert d["attempt"]["is_correct"] == True
         assert d["correct_answer"] == mcq["correct_answer"]
         assert d["solution"]
 
@@ -125,7 +125,7 @@ class TestAttempts:
                           headers=admin_headers,
                           json={"selected_answer": wrong})
         assert r.status_code == 200
-        assert r.json()["data"]["attempt"]["is_correct"] is False
+        assert r.json()["data"]["attempt"]["is_correct"] == False
 
     def test_msq_exact_match(self, admin_headers, questions):
         msq = next(q for q in questions if q["question_type"] == "MSQ")
@@ -133,7 +133,7 @@ class TestAttempts:
                           headers=admin_headers,
                           json={"selected_answer": msq["correct_answer"]})
         assert r.status_code == 200
-        assert r.json()["data"]["attempt"]["is_correct"] is True
+        assert r.json()["data"]["attempt"]["is_correct"] == True
 
     def test_msq_partial_wrong(self, admin_headers, questions):
         msq = next(q for q in questions if q["question_type"] == "MSQ")
@@ -141,7 +141,7 @@ class TestAttempts:
         r = requests.post(f"{API}/questions/{msq['question_id']}/attempt",
                           headers=admin_headers, json={"selected_answer": partial})
         assert r.status_code == 200
-        assert r.json()["data"]["attempt"]["is_correct"] is False
+        assert r.json()["data"]["attempt"]["is_correct"] == False
 
     def test_nat_correct(self, admin_headers, questions):
         nat = next(q for q in questions if q["question_type"] == "NAT")
@@ -149,7 +149,7 @@ class TestAttempts:
                           headers=admin_headers,
                           json={"selected_answer": nat["correct_answer"]})
         assert r.status_code == 200
-        assert r.json()["data"]["attempt"]["is_correct"] is True
+        assert r.json()["data"]["attempt"]["is_correct"] == True
 
 
 # --------- Notes ---------
@@ -190,7 +190,7 @@ class TestPYQs:
                           json={"selected_answer": pyq["correct_answer"]})
         assert r.status_code == 200
         d = r.json()["data"]
-        assert d["attempt"]["is_correct"] is True
+        assert d["attempt"]["is_correct"] == True
         assert d["solution"]
 
 
@@ -246,7 +246,7 @@ class TestPlaylists:
                                 "subject_id": sid})
         assert r.status_code == 400
         body = r.json()
-        assert body["success"] is False
+        assert body["success"] == False
         assert body["error"]["code"] == "invalid_url"
 
 
