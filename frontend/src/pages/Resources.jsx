@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { FolderArchive, Plus, ExternalLink, Trash2, Upload, FileText, HardDrive } from "lucide-react";
+import { FolderArchive, Plus, ExternalLink, Trash2, Upload, FileText, HardDrive, X, Maximize2 } from "lucide-react";
 import { toast } from "sonner";
 import { Link } from "react-router-dom";
 
@@ -28,6 +28,7 @@ export default function Resources() {
   const [uploadForm, setUploadForm] = useState({ title: "", subject_id: "", resource_type: "Notes" });
   const [uploadFile, setUploadFile] = useState(null);
   const [uploading, setUploading] = useState(false);
+  const [viewer, setViewer] = useState(null); // {title, embed_url, view_url}
   const fileRef = useRef(null);
 
   const load = () => {
@@ -76,14 +77,12 @@ export default function Resources() {
   const remove = async (id) => { await api.delete(`/resources/${id}`); load(); };
 
   const openResource = async (r) => {
-    if (r.drive_file_id) {
-      try {
-        const res = await api.get(`/resources/${r.resource_id}/view`);
-        if (res.data?.data?.url) window.open(res.data.data.url, "_blank");
-      } catch { toast.error("Could not open"); }
-    } else if (r.external_url) {
-      window.open(r.external_url, "_blank");
-    }
+    try {
+      const res = await api.get(`/resources/${r.resource_id}/view`);
+      const data = res.data?.data;
+      if (!data?.embed_url) { toast.error("No preview available"); return; }
+      setViewer({ title: r.title, embed_url: data.embed_url, view_url: data.view_url, kind: data.kind });
+    } catch { toast.error("Could not open"); }
   };
 
   return (
@@ -243,6 +242,49 @@ export default function Resources() {
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {viewer && (
+        <div
+          className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm flex flex-col"
+          data-testid="resource-viewer"
+        >
+          <div className="flex items-center justify-between px-5 py-3 border-b border-border bg-card/90">
+            <div className="flex items-center gap-2 min-w-0">
+              <FileText className="w-4 h-4 shrink-0" />
+              <div className="text-sm font-medium truncate">{viewer.title}</div>
+            </div>
+            <div className="flex items-center gap-2">
+              {viewer.view_url && (
+                <a
+                  href={viewer.view_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-xs mono text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
+                  data-testid="viewer-open-tab"
+                >
+                  <Maximize2 className="w-3.5 h-3.5" /> open in new tab
+                </a>
+              )}
+              <button
+                onClick={() => setViewer(null)}
+                className="p-1.5 rounded-md hover:bg-secondary text-muted-foreground hover:text-foreground"
+                data-testid="viewer-close-btn"
+                title="Close"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+          <div className="flex-1 bg-black">
+            <iframe
+              src={viewer.embed_url}
+              title={viewer.title}
+              className="w-full h-full border-0"
+              allow="autoplay"
+            />
+          </div>
         </div>
       )}
     </div>

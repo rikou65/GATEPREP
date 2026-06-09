@@ -876,19 +876,32 @@ async def resource_view(resource_id: str, user=Depends(get_current_user)):
     )
     if not res:
         return err("not_found", "Resource not found", 404)
-    if res.get("drive_file_id"):
-        service = await _build_drive_service(user["user_id"])
-        if service:
-            try:
-                meta = service.files().get(
-                    fileId=res["drive_file_id"],
-                    fields="webViewLink,webContentLink",
-                ).execute()
-                url = meta.get("webViewLink") or meta.get("webContentLink") or res.get("external_url", "")
-                return ok({"url": url})
-            except Exception as e:
-                logger.warning(f"Drive view fetch failed: {e}")
-    return ok({"url": res.get("external_url", "")})
+    drive_file_id = res.get("drive_file_id")
+    # Try to parse drive_file_id out of an external_url if it's a Drive share link
+    if not drive_file_id and res.get("external_url"):
+        m = re.search(r"/file/d/([A-Za-z0-9_-]+)", res["external_url"])
+        if not m:
+            m = re.search(r"[?&]id=([A-Za-z0-9_-]+)", res["external_url"])
+        if m:
+            drive_file_id = m.group(1)
+
+    if drive_file_id:
+        embed_url = f"https://drive.google.com/file/d/{drive_file_id}/preview"
+        web_view = res.get("external_url", "")
+        if res.get("drive_file_id"):
+            service = await _build_drive_service(user["user_id"])
+            if service:
+                try:
+                    meta = service.files().get(
+                        fileId=drive_file_id, fields="webViewLink,webContentLink,mimeType",
+                    ).execute()
+                    web_view = meta.get("webViewLink") or web_view
+                except Exception as e:
+                    logger.warning(f"Drive view fetch failed: {e}")
+        return ok({"embed_url": embed_url, "view_url": web_view, "kind": "drive"})
+
+    # Generic external URL — embed only if same-origin friendly (most won't be due to X-Frame-Options)
+    return ok({"embed_url": res.get("external_url", ""), "view_url": res.get("external_url", ""), "kind": "external"})
 
 
 # ---------- Dashboard / Analytics ----------
