@@ -778,10 +778,15 @@ async def admin_users(user=Depends(require_admin)):
 
 # ---------- Seed ----------
 SUBJECTS_SEED = [
-    ("Engineering Mathematics", ["Discrete Mathematics", "Linear Algebra", "Calculus", "Probability & Statistics"]),
+    ("Engineering Mathematics", ["Linear Algebra", "Calculus", "Probability & Statistics"]),
+    ("Discrete Mathematics", ["Sets & Relations", "Combinatorics", "Graph Theory",
+                              "Propositional & Predicate Logic", "Group Theory"]),
     ("Digital Logic", ["Number Systems", "Boolean Algebra", "Combinational Circuits", "Sequential Circuits", "Minimization"]),
     ("Computer Organization and Architecture", ["Machine Instructions", "ALU & Datapath", "Pipelining", "Memory Hierarchy", "I/O Interface"]),
-    ("Programming and Data Structures", ["C Programming", "Arrays & Strings", "Linked Lists", "Stacks & Queues", "Trees", "Graphs", "Hashing"]),
+    ("C Programming", ["C Basics", "Pointers", "Functions & Recursion",
+                       "Arrays & Strings", "Structures & Unions", "Dynamic Memory"]),
+    ("Data Structures", ["Arrays", "Linked Lists", "Stacks & Queues", "Trees",
+                         "Graphs", "Hashing", "Heaps"]),
     ("Algorithms", ["Asymptotic Analysis", "Searching & Sorting", "Greedy", "Divide & Conquer", "Dynamic Programming", "Graph Algorithms"]),
     ("Theory of Computation", ["Regular Languages", "Context-Free Languages", "Pushdown Automata", "Turing Machines", "Undecidability"]),
     ("Compiler Design", ["Lexical Analysis", "Parsing", "Syntax-Directed Translation", "Intermediate Code", "Code Optimization"]),
@@ -839,7 +844,7 @@ SAMPLE_QUESTIONS = [
      "ans": "1",
      "sol": "{a^n b^n} requires counting and is not regular (provable by pumping lemma).",
      "diff": "Medium"},
-    {"subject": "Programming and Data Structures", "topic": "Trees", "qt": "NAT",
+    {"subject": "Data Structures", "topic": "Trees", "qt": "NAT",
      "qtext": "What is the maximum number of nodes in a binary tree of height 3? (Root at height 0)",
      "opts": None, "ans": "15",
      "sol": "Maximum nodes in a binary tree of height h = 2^(h+1) - 1 = 2^4 - 1 = 15.",
@@ -877,7 +882,7 @@ SAMPLE_PYQS = [
      "opts": ["Membership in regular language", "Emptiness of regular language",
               "Halting problem", "Equivalence of DFAs"],
      "ans": "2", "sol": "Halting problem is the classic undecidable problem (Turing 1936).", "diff": "Hard"},
-    {"subject": "Programming and Data Structures", "topic": "Hashing", "year": 2022, "qt": "MCQ",
+    {"subject": "Data Structures", "topic": "Hashing", "year": 2022, "qt": "MCQ",
      "qtext": "Open addressing with linear probing suffers most from:",
      "opts": ["Secondary clustering", "Primary clustering", "Chaining overhead", "Hash collisions only"],
      "ans": "1", "sol": "Linear probing causes primary clustering.", "diff": "Medium"},
@@ -985,8 +990,133 @@ async def on_startup():
         if await db.subjects.count_documents({}) == 0:
             await seed_data()
             logger.info("Seeded GATE syllabus")
+        await _migrate_v2_split_subjects()
     except Exception as e:
-        logger.error(f"Seed error: {e}")
+        logger.error(f"Startup error: {e}")
+
+
+async def _migrate_v2_split_subjects() -> None:
+    """Idempotent migration: split Discrete Math out of Engineering Math, and
+    split Programming and Data Structures into C Programming + Data Structures."""
+    await _split_discrete_math_out()
+    await _split_pad_into_cp_and_ds()
+    await _reorder_subjects()
+
+
+async def _split_discrete_math_out() -> None:
+    if await db.subjects.find_one({"name": "Discrete Mathematics"}, {"_id": 0}):
+        return  # already migrated
+    new_sid = new_id("sub")
+    await db.subjects.insert_one({
+        "subject_id": new_sid, "name": "Discrete Mathematics", "order": 1,
+        "created_at": iso(now_utc()),
+    })
+    topics = ["Sets & Relations", "Combinatorics", "Graph Theory",
+              "Propositional & Predicate Logic", "Group Theory"]
+    new_topic_ids: List[str] = []
+    for j, t in enumerate(topics):
+        tid = new_id("top")
+        await db.topics.insert_one({
+            "topic_id": tid, "subject_id": new_sid, "name": t,
+            "order": j, "created_at": iso(now_utc()),
+        })
+        new_topic_ids.append(tid)
+    # migrate any content from old "Discrete Mathematics" topic under Engineering Math
+    em = await db.subjects.find_one({"name": "Engineering Mathematics"}, {"_id": 0})
+    if not em:
+        return
+    old_topic = await db.topics.find_one(
+        {"subject_id": em["subject_id"], "name": "Discrete Mathematics"}, {"_id": 0}
+    )
+    if not old_topic:
+        return
+    target_tid = new_topic_ids[0]
+    set_fields = {"subject_id": new_sid, "topic_id": target_tid}
+    await db.questions.update_many({"topic_id": old_topic["topic_id"]}, {"$set": set_fields})
+    await db.pyqs.update_many({"topic_id": old_topic["topic_id"]}, {"$set": set_fields})
+    await db.mistakes.update_many({"topic_id": old_topic["topic_id"]}, {"$set": set_fields})
+    await db.topics.delete_one({"topic_id": old_topic["topic_id"]})
+    logger.info("Migrated: Discrete Mathematics split into own subject")
+
+
+async def _split_pad_into_cp_and_ds() -> None:
+    old_pad = await db.subjects.find_one(
+        {"name": "Programming and Data Structures"}, {"_id": 0}
+    )
+    if not old_pad:
+        return  # already migrated or never existed
+    cp_sid = new_id("sub")
+    ds_sid = new_id("sub")
+    await db.subjects.insert_one({
+        "subject_id": cp_sid, "name": "C Programming", "order": 4,
+        "created_at": iso(now_utc()),
+    })
+    await db.subjects.insert_one({
+        "subject_id": ds_sid, "name": "Data Structures", "order": 5,
+        "created_at": iso(now_utc()),
+    })
+    cp_topics = ["C Basics", "Pointers", "Functions & Recursion",
+                 "Arrays & Strings", "Structures & Unions", "Dynamic Memory"]
+    ds_topics = ["Arrays", "Linked Lists", "Stacks & Queues", "Trees",
+                 "Graphs", "Hashing", "Heaps"]
+    cp_map: Dict[str, str] = {}
+    ds_map: Dict[str, str] = {}
+    for j, t in enumerate(cp_topics):
+        tid = new_id("top")
+        await db.topics.insert_one({
+            "topic_id": tid, "subject_id": cp_sid, "name": t,
+            "order": j, "created_at": iso(now_utc()),
+        })
+        cp_map[t] = tid
+    for j, t in enumerate(ds_topics):
+        tid = new_id("top")
+        await db.topics.insert_one({
+            "topic_id": tid, "subject_id": ds_sid, "name": t,
+            "order": j, "created_at": iso(now_utc()),
+        })
+        ds_map[t] = tid
+    # Old PaD topic name → new (subject_id, topic_id)
+    routing: Dict[str, tuple] = {
+        "C Programming": (cp_sid, cp_map["C Basics"]),
+        "Arrays & Strings": (ds_sid, ds_map["Arrays"]),
+        "Linked Lists": (ds_sid, ds_map["Linked Lists"]),
+        "Stacks & Queues": (ds_sid, ds_map["Stacks & Queues"]),
+        "Trees": (ds_sid, ds_map["Trees"]),
+        "Graphs": (ds_sid, ds_map["Graphs"]),
+        "Hashing": (ds_sid, ds_map["Hashing"]),
+    }
+    old_topics = await db.topics.find(
+        {"subject_id": old_pad["subject_id"]}, {"_id": 0}
+    ).to_list(200)
+    for ot in old_topics:
+        target = routing.get(ot["name"])
+        if target:
+            new_sid, new_tid = target
+            set_fields = {"subject_id": new_sid, "topic_id": new_tid}
+            await db.questions.update_many({"topic_id": ot["topic_id"]}, {"$set": set_fields})
+            await db.pyqs.update_many({"topic_id": ot["topic_id"]}, {"$set": set_fields})
+            await db.mistakes.update_many({"topic_id": ot["topic_id"]}, {"$set": set_fields})
+        await db.topics.delete_one({"topic_id": ot["topic_id"]})
+    await db.subjects.delete_one({"subject_id": old_pad["subject_id"]})
+    # also migrate any orphan resources / playlists tied to old PaD subject_id
+    await db.resources.update_many(
+        {"subject_id": old_pad["subject_id"]}, {"$set": {"subject_id": ds_sid}}
+    )
+    await db.playlists.update_many(
+        {"subject_id": old_pad["subject_id"]}, {"$set": {"subject_id": ds_sid}}
+    )
+    logger.info("Migrated: PaD split into C Programming + Data Structures")
+
+
+async def _reorder_subjects() -> None:
+    desired = [
+        "Engineering Mathematics", "Discrete Mathematics", "Digital Logic",
+        "Computer Organization and Architecture", "C Programming", "Data Structures",
+        "Algorithms", "Theory of Computation", "Compiler Design",
+        "Operating Systems", "Databases", "Computer Networks",
+    ]
+    for i, name in enumerate(desired):
+        await db.subjects.update_one({"name": name}, {"$set": {"order": i}})
 
 @app.on_event("shutdown")
 async def on_shutdown():

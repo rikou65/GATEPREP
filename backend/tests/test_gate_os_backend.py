@@ -61,7 +61,7 @@ class TestPublic:
         assert r.status_code == 200
         data = r.json()["data"]
         assert isinstance(data, list)
-        assert len(data) == 10
+        assert len(data) == 12
         assert {"subject_id", "name", "order"}.issubset(data[0].keys())
 
     def test_topics_for_subject(self, subjects: List[Dict[str, Any]]) -> None:
@@ -100,7 +100,7 @@ class TestDashboardAndQuestions:
                   "total_playlists", "question_accuracy", "pyq_accuracy",
                   "total_mistakes", "resources_uploaded"]:
             assert k in summary, f"missing {k}"
-        assert len(d["subjects"]) == 10
+        assert len(d["subjects"]) == 12
 
     def test_questions_list_with_progress(
         self, admin_headers: Dict[str, str], questions: List[Dict[str, Any]]
