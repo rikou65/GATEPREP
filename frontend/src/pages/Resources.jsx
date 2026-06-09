@@ -7,6 +7,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { FolderArchive, Plus, ExternalLink, Trash2, Upload, FileText, HardDrive, X, Maximize2 } from "lucide-react";
 import { toast } from "sonner";
 import { Link } from "react-router-dom";
+import PdfCanvasViewer from "@/components/PdfCanvasViewer";
 
 const TYPES = ["Books", "Notes", "Question Banks", "PYQ Collections", "Formula Sheets", "Reference Material"];
 
@@ -92,14 +93,18 @@ export default function Resources() {
     try {
       const res = await api.get(`/resources/${r.resource_id}/view`);
       const data = res.data?.data;
-      if (!data?.embed_url) { toast.error("No preview available"); return; }
-      // Drive-backed files: fetch via axios (auth + cookies handled), wrap as blob URL.
-      // This sidesteps iframe cookie blockers (Brave Shields, Chrome 3rd-party cookies).
+      if (!data?.embed_url && data?.kind !== "drive") { toast.error("No preview available"); return; }
       if (data.kind === "drive") {
-        setViewer({ title: r.title, embed_url: "", view_url: data.view_url, isBlob: true, loading: true });
+        setViewer({ title: r.title, blob: null, view_url: data.view_url, isPdf: true, loading: true });
         const blobRes = await api.get(`/resources/${r.resource_id}/stream`, { responseType: "blob" });
-        const blobUrl = URL.createObjectURL(blobRes.data);
-        setViewer({ title: r.title, embed_url: blobUrl, view_url: data.view_url, isBlob: true, loading: false });
+        const isPdf = (blobRes.data?.type || "").includes("pdf") || r.title?.toLowerCase().endsWith(".pdf");
+        if (isPdf) {
+          setViewer({ title: r.title, blob: blobRes.data, view_url: data.view_url, isPdf: true, loading: false });
+        } else {
+          // Non-PDF Drive file: render via blob URL in iframe (best effort)
+          const blobUrl = URL.createObjectURL(blobRes.data);
+          setViewer({ title: r.title, embed_url: blobUrl, view_url: data.view_url, isBlob: true, loading: false });
+        }
       } else {
         setViewer({ title: r.title, embed_url: data.embed_url, view_url: data.view_url, isBlob: false, loading: false });
       }
@@ -307,6 +312,8 @@ export default function Resources() {
                 <div className="w-8 h-8 border-2 border-foreground/30 border-t-foreground rounded-full animate-spin" />
                 <div className="text-xs mono">Streaming from your Drive…</div>
               </div>
+            ) : viewer.isPdf && viewer.blob ? (
+              <PdfCanvasViewer blob={viewer.blob} />
             ) : (
               <iframe
                 src={viewer.embed_url}
