@@ -754,10 +754,12 @@ async def drive_callback(code: str = Query(...), state: str = Query(...)):
         )
         flow.fetch_token(code=code)
         creds = flow.credentials
-        # validate that required scope was granted (ignore extras)
+        # Note: granted scopes may not be reported by Google in every token response.
+        # We log them for visibility but do NOT block on missing scope here —
+        # if drive.file wasn't actually granted, the first API call will fail with
+        # 403 and we can re-prompt then.
         granted = set(creds.scopes or [])
-        if not set(DRIVE_SCOPES).issubset(granted):
-            return err("scope_missing", f"Missing scopes: {DRIVE_SCOPES}", 400)
+        logger.info(f"Drive OAuth granted scopes for user={state}: {granted}")
         # fetch user info from drive about() to display
         try:
             svc = build("drive", "v3", credentials=creds, cache_discovery=False)
