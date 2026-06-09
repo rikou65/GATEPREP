@@ -28,8 +28,20 @@ export default function Resources() {
   const [uploadForm, setUploadForm] = useState({ title: "", subject_id: "", resource_type: "Notes" });
   const [uploadFile, setUploadFile] = useState(null);
   const [uploading, setUploading] = useState(false);
-  const [viewer, setViewer] = useState(null); // {title, embed_url, view_url}
+  const [viewer, setViewer] = useState(null);
   const fileRef = useRef(null);
+
+  // Revoke blob URL when viewer changes/closes to free memory
+  useEffect(() => {
+    return () => {
+      if (viewer?.isBlob && viewer.embed_url) URL.revokeObjectURL(viewer.embed_url);
+    };
+  }, [viewer]);
+
+  const closeViewer = () => {
+    if (viewer?.isBlob && viewer.embed_url) URL.revokeObjectURL(viewer.embed_url);
+    setViewer(null);
+  };
 
   const load = () => {
     const params = {};
@@ -81,8 +93,20 @@ export default function Resources() {
       const res = await api.get(`/resources/${r.resource_id}/view`);
       const data = res.data?.data;
       if (!data?.embed_url) { toast.error("No preview available"); return; }
-      setViewer({ title: r.title, embed_url: data.embed_url, view_url: data.view_url, kind: data.kind });
-    } catch { toast.error("Could not open"); }
+      // Drive-backed files: fetch via axios (auth + cookies handled), wrap as blob URL.
+      // This sidesteps iframe cookie blockers (Brave Shields, Chrome 3rd-party cookies).
+      if (data.kind === "drive") {
+        setViewer({ title: r.title, embed_url: "", view_url: data.view_url, isBlob: true, loading: true });
+        const blobRes = await api.get(`/resources/${r.resource_id}/stream`, { responseType: "blob" });
+        const blobUrl = URL.createObjectURL(blobRes.data);
+        setViewer({ title: r.title, embed_url: blobUrl, view_url: data.view_url, isBlob: true, loading: false });
+      } else {
+        setViewer({ title: r.title, embed_url: data.embed_url, view_url: data.view_url, isBlob: false, loading: false });
+      }
+    } catch {
+      toast.error("Could not open");
+      setViewer(null);
+    }
   };
 
   return (
@@ -268,7 +292,7 @@ export default function Resources() {
                 </a>
               )}
               <button
-                onClick={() => setViewer(null)}
+                onClick={closeViewer}
                 className="p-1.5 rounded-md hover:bg-secondary text-muted-foreground hover:text-foreground"
                 data-testid="viewer-close-btn"
                 title="Close"
@@ -277,13 +301,20 @@ export default function Resources() {
               </button>
             </div>
           </div>
-          <div className="flex-1 bg-black">
-            <iframe
-              src={viewer.embed_url}
-              title={viewer.title}
-              className="w-full h-full border-0"
-              allow="autoplay"
-            />
+          <div className="flex-1 bg-black relative">
+            {viewer.loading ? (
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-muted-foreground">
+                <div className="w-8 h-8 border-2 border-foreground/30 border-t-foreground rounded-full animate-spin" />
+                <div className="text-xs mono">Streaming from your Drive…</div>
+              </div>
+            ) : (
+              <iframe
+                src={viewer.embed_url}
+                title={viewer.title}
+                className="w-full h-full border-0"
+                allow="autoplay"
+              />
+            )}
           </div>
         </div>
       )}
