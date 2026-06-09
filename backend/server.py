@@ -1,11 +1,12 @@
 """GATE Study OS - FastAPI backend (MongoDB)."""
-from fastapi import FastAPI, APIRouter, Request, Response, HTTPException, Depends, Query
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, APIRouter, Request, Response, HTTPException, Depends, Query, UploadFile, File, Form
+from fastapi.responses import JSONResponse, RedirectResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import re
+import io
 import uuid
 import logging
 import requests
@@ -13,6 +14,12 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 from typing import List, Optional, Any, Dict
 from datetime import datetime, timezone, timedelta
+
+from google_auth_oauthlib.flow import Flow
+from google.oauth2.credentials import Credentials
+from google.auth.transport.requests import Request as GoogleRequest
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseUpload
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -23,6 +30,15 @@ db = client[os.environ["DB_NAME"]]
 
 YOUTUBE_API_KEY = os.environ.get("YOUTUBE_API_KEY", "")
 ADMIN_EMAILS = [e.strip() for e in os.environ.get("ADMIN_EMAILS", "").split(",") if e.strip()]
+
+# Google Drive OAuth
+GOOGLE_DRIVE_CLIENT_ID = os.environ.get("GOOGLE_DRIVE_CLIENT_ID", "")
+GOOGLE_DRIVE_CLIENT_SECRET = os.environ.get("GOOGLE_DRIVE_CLIENT_SECRET", "")
+GOOGLE_DRIVE_REDIRECT_URI = os.environ.get("GOOGLE_DRIVE_REDIRECT_URI", "")
+DRIVE_SCOPES = ["https://www.googleapis.com/auth/drive.file"]
+DRIVE_ROOT_NAME = "GATEPREP"
+RESOURCE_TYPE_FOLDERS = ["Books", "Notes", "Question Banks", "PYQ Collections",
+                          "Formula Sheets", "Reference Material"]
 
 app = FastAPI(title="GATE Study OS")
 api = APIRouter(prefix="/api")
@@ -591,6 +607,7 @@ async def create_resource(body: ResourceIn, user=Depends(get_current_user)):
         "subject_id": body.subject_id, "resource_type": body.resource_type,
         "title": body.title, "external_url": body.external_url or "",
         "file_size": body.file_size or 0, "created_at": iso(now_utc()),
+        "source": "external",
     }
     await db.resources.insert_one(dict(doc))
     doc.pop("_id", None)
@@ -609,8 +626,268 @@ async def list_resources(subject_id: Optional[str] = None, resource_type: Option
 
 @api.delete("/resources/{resource_id}")
 async def delete_resource(resource_id: str, user=Depends(get_current_user)):
+    res = await db.resources.find_one(
+        {"resource_id": resource_id, "user_id": user["user_id"]}, {"_id": 0}
+    )
+    if res and res.get("drive_file_id"):
+        # best-effort delete from user's Drive
+        try:
+            service = await _build_drive_service(user["user_id"])
+            if service:
+                service.files().delete(fileId=res["drive_file_id"]).execute()
+        except Exception as e:
+            logger.warning(f"Drive delete failed for {resource_id}: {e}")
     r = await db.resources.delete_one({"resource_id": resource_id, "user_id": user["user_id"]})
     return ok({"deleted": r.deleted_count})
+
+
+# ---------- Google Drive Integration ----------
+def _drive_client_config() -> Dict[str, Any]:
+    return {
+        "web": {
+            "client_id": GOOGLE_DRIVE_CLIENT_ID,
+            "client_secret": GOOGLE_DRIVE_CLIENT_SECRET,
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "redirect_uris": [GOOGLE_DRIVE_REDIRECT_URI],
+        }
+    }
+
+
+async def _build_drive_service(user_id: str):
+    """Build Google Drive API client for user, auto-refreshing token if expired.
+    Returns None if user has not connected Drive."""
+    doc = await db.drive_credentials.find_one({"user_id": user_id}, {"_id": 0})
+    if not doc:
+        return None
+    expiry = None
+    if doc.get("expiry"):
+        try:
+            expiry = datetime.fromisoformat(doc["expiry"])
+            if expiry.tzinfo is None:
+                expiry = expiry.replace(tzinfo=timezone.utc)
+        except Exception:
+            expiry = None
+    creds = Credentials(
+        token=doc.get("access_token"),
+        refresh_token=doc.get("refresh_token"),
+        token_uri=doc.get("token_uri", "https://oauth2.googleapis.com/token"),
+        client_id=GOOGLE_DRIVE_CLIENT_ID,
+        client_secret=GOOGLE_DRIVE_CLIENT_SECRET,
+        scopes=doc.get("scopes") or DRIVE_SCOPES,
+        expiry=expiry.replace(tzinfo=None) if expiry else None,  # google lib wants naive UTC
+    )
+    if not creds.valid and creds.refresh_token:
+        creds.refresh(GoogleRequest())
+        new_expiry = creds.expiry.replace(tzinfo=timezone.utc) if creds.expiry else None
+        await db.drive_credentials.update_one(
+            {"user_id": user_id},
+            {"$set": {
+                "access_token": creds.token,
+                "expiry": iso(new_expiry) if new_expiry else None,
+                "updated_at": iso(now_utc()),
+            }},
+        )
+    return build("drive", "v3", credentials=creds, cache_discovery=False)
+
+
+def _find_folder(service, name: str, parent_id: Optional[str]) -> Optional[str]:
+    q_parts = [
+        f"name='{name.replace(chr(39), chr(92)+chr(39))}'",
+        "mimeType='application/vnd.google-apps.folder'",
+        "trashed=false",
+    ]
+    if parent_id:
+        q_parts.append(f"'{parent_id}' in parents")
+    res = service.files().list(
+        q=" and ".join(q_parts), fields="files(id,name)", pageSize=10,
+        spaces="drive",
+    ).execute()
+    files = res.get("files", [])
+    return files[0]["id"] if files else None
+
+
+def _get_or_create_folder(service, name: str, parent_id: Optional[str] = None) -> str:
+    fid = _find_folder(service, name, parent_id)
+    if fid:
+        return fid
+    meta = {"name": name, "mimeType": "application/vnd.google-apps.folder"}
+    if parent_id:
+        meta["parents"] = [parent_id]
+    created = service.files().create(body=meta, fields="id").execute()
+    return created["id"]
+
+
+def _ensure_resource_folder(service, resource_type: str, subject_name: str) -> str:
+    root_id = _get_or_create_folder(service, DRIVE_ROOT_NAME, None)
+    type_id = _get_or_create_folder(service, resource_type, root_id)
+    subject_id = _get_or_create_folder(service, subject_name, type_id)
+    return subject_id
+
+
+@api.get("/drive/connect")
+async def drive_connect(user=Depends(get_current_user)):
+    if not GOOGLE_DRIVE_CLIENT_ID:
+        return err("config", "Google Drive not configured", 500)
+    flow = Flow.from_client_config(
+        _drive_client_config(),
+        scopes=DRIVE_SCOPES,
+        redirect_uri=GOOGLE_DRIVE_REDIRECT_URI,
+    )
+    auth_url, _state = flow.authorization_url(
+        access_type="offline",
+        include_granted_scopes="true",
+        prompt="consent",
+        state=user["user_id"],
+    )
+    return ok({"authorization_url": auth_url})
+
+
+@api.get("/drive/callback")
+async def drive_callback(code: str = Query(...), state: str = Query(...)):
+    """OAuth callback - exchanges code for tokens, stores them, then redirects to frontend."""
+    try:
+        flow = Flow.from_client_config(
+            _drive_client_config(),
+            scopes=None,  # accept granted scopes
+            redirect_uri=GOOGLE_DRIVE_REDIRECT_URI,
+        )
+        flow.fetch_token(code=code)
+        creds = flow.credentials
+        # validate that required scope was granted (ignore extras)
+        granted = set(creds.scopes or [])
+        if not set(DRIVE_SCOPES).issubset(granted):
+            return err("scope_missing", f"Missing scopes: {DRIVE_SCOPES}", 400)
+        # fetch user info from drive about() to display
+        try:
+            svc = build("drive", "v3", credentials=creds, cache_discovery=False)
+            about = svc.about().get(fields="user(emailAddress,displayName)").execute()
+            drive_email = about.get("user", {}).get("emailAddress", "")
+        except Exception:
+            drive_email = ""
+        expiry_iso = iso(creds.expiry.replace(tzinfo=timezone.utc)) if creds.expiry else None
+        await db.drive_credentials.update_one(
+            {"user_id": state},
+            {"$set": {
+                "user_id": state,
+                "access_token": creds.token,
+                "refresh_token": creds.refresh_token,
+                "token_uri": creds.token_uri,
+                "scopes": list(granted),
+                "expiry": expiry_iso,
+                "drive_email": drive_email,
+                "updated_at": iso(now_utc()),
+            }, "$setOnInsert": {"connected_at": iso(now_utc())}},
+            upsert=True,
+        )
+        frontend = os.environ.get("FRONTEND_URL") or GOOGLE_DRIVE_REDIRECT_URI.split("/api/")[0]
+        return RedirectResponse(url=f"{frontend}/settings?drive=connected")
+    except Exception as e:
+        logger.error(f"Drive callback error: {e}")
+        frontend = os.environ.get("FRONTEND_URL") or GOOGLE_DRIVE_REDIRECT_URI.split("/api/")[0]
+        return RedirectResponse(url=f"{frontend}/settings?drive=error")
+
+
+@api.get("/drive/status")
+async def drive_status(user=Depends(get_current_user)):
+    doc = await db.drive_credentials.find_one({"user_id": user["user_id"]}, {"_id": 0})
+    if not doc:
+        return ok({"connected": False})
+    return ok({
+        "connected": True,
+        "drive_email": doc.get("drive_email", ""),
+        "connected_at": doc.get("connected_at"),
+    })
+
+
+@api.post("/drive/disconnect")
+async def drive_disconnect(user=Depends(get_current_user)):
+    doc = await db.drive_credentials.find_one({"user_id": user["user_id"]}, {"_id": 0})
+    if doc and doc.get("refresh_token"):
+        try:
+            requests.post(
+                "https://oauth2.googleapis.com/revoke",
+                params={"token": doc["refresh_token"]},
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+                timeout=10,
+            )
+        except Exception as e:
+            logger.warning(f"Drive token revoke failed: {e}")
+    await db.drive_credentials.delete_one({"user_id": user["user_id"]})
+    return ok({"disconnected": True})
+
+
+@api.post("/resources/upload")
+async def resources_upload(
+    file: UploadFile = File(...),
+    subject_id: str = Form(...),
+    resource_type: str = Form(...),
+    title: Optional[str] = Form(None),
+    user=Depends(get_current_user),
+):
+    """Upload file from user's local disk → user's own Google Drive
+    (folder structure: GATEPREP/{resource_type}/{subject_name}/{filename})."""
+    if resource_type not in RESOURCE_TYPE_FOLDERS:
+        return err("invalid_type", f"resource_type must be one of {RESOURCE_TYPE_FOLDERS}", 400)
+    subject = await db.subjects.find_one({"subject_id": subject_id}, {"_id": 0})
+    if not subject:
+        return err("not_found", "Subject not found", 404)
+    service = await _build_drive_service(user["user_id"])
+    if not service:
+        return err("drive_not_connected", "Connect Google Drive first", 400)
+    contents = await file.read()
+    if not contents:
+        return err("empty_file", "Empty file", 400)
+    if len(contents) > 100 * 1024 * 1024:
+        return err("too_large", "File exceeds 100MB", 413)
+    parent_id = _ensure_resource_folder(service, resource_type, subject["name"])
+    media = MediaIoBaseUpload(io.BytesIO(contents), mimetype=file.content_type or "application/octet-stream",
+                              resumable=False)
+    drive_file = service.files().create(
+        body={"name": file.filename, "parents": [parent_id]},
+        media_body=media,
+        fields="id,name,size,webViewLink,mimeType",
+    ).execute()
+    doc = {
+        "resource_id": new_id("res"),
+        "user_id": user["user_id"],
+        "subject_id": subject_id,
+        "resource_type": resource_type,
+        "title": title or file.filename,
+        "filename": file.filename,
+        "mime_type": drive_file.get("mimeType", file.content_type or ""),
+        "file_size": int(drive_file.get("size", len(contents))),
+        "drive_file_id": drive_file["id"],
+        "external_url": drive_file.get("webViewLink", ""),
+        "source": "drive",
+        "created_at": iso(now_utc()),
+    }
+    await db.resources.insert_one(dict(doc))
+    doc.pop("_id", None)
+    return ok(doc)
+
+
+@api.get("/resources/{resource_id}/view")
+async def resource_view(resource_id: str, user=Depends(get_current_user)):
+    res = await db.resources.find_one(
+        {"resource_id": resource_id, "user_id": user["user_id"]}, {"_id": 0}
+    )
+    if not res:
+        return err("not_found", "Resource not found", 404)
+    if res.get("drive_file_id"):
+        service = await _build_drive_service(user["user_id"])
+        if service:
+            try:
+                meta = service.files().get(
+                    fileId=res["drive_file_id"],
+                    fields="webViewLink,webContentLink",
+                ).execute()
+                url = meta.get("webViewLink") or meta.get("webContentLink") or res.get("external_url", "")
+                return ok({"url": url})
+            except Exception as e:
+                logger.warning(f"Drive view fetch failed: {e}")
+    return ok({"url": res.get("external_url", "")})
+
 
 # ---------- Dashboard / Analytics ----------
 def _accuracy(attempts: List[Dict[str, Any]]) -> float:
