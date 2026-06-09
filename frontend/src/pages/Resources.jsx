@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,6 +32,7 @@ export default function Resources() {
   const [uploading, setUploading] = useState(false);
   const [viewer, setViewer] = useState(null);
   const fileRef = useRef(null);
+  const blobCache = useRef(new Map()); // resource_id -> Blob (cached for this session)
 
   // Revoke blob URL when viewer changes/closes to free memory
   useEffect(() => {
@@ -95,13 +97,25 @@ export default function Resources() {
       const data = res.data?.data;
       if (!data?.embed_url && data?.kind !== "drive") { toast.error("No preview available"); return; }
       if (data.kind === "drive") {
+        // Cached? Skip the network round-trip.
+        const cached = blobCache.current.get(r.resource_id);
+        if (cached) {
+          const isPdf = (cached.type || "").includes("pdf") || r.title?.toLowerCase().endsWith(".pdf");
+          if (isPdf) {
+            setViewer({ title: r.title, blob: cached, view_url: data.view_url, isPdf: true, loading: false });
+          } else {
+            const blobUrl = URL.createObjectURL(cached);
+            setViewer({ title: r.title, embed_url: blobUrl, view_url: data.view_url, isBlob: true, loading: false });
+          }
+          return;
+        }
         setViewer({ title: r.title, blob: null, view_url: data.view_url, isPdf: true, loading: true });
         const blobRes = await api.get(`/resources/${r.resource_id}/stream`, { responseType: "blob" });
+        blobCache.current.set(r.resource_id, blobRes.data);
         const isPdf = (blobRes.data?.type || "").includes("pdf") || r.title?.toLowerCase().endsWith(".pdf");
         if (isPdf) {
           setViewer({ title: r.title, blob: blobRes.data, view_url: data.view_url, isPdf: true, loading: false });
         } else {
-          // Non-PDF Drive file: render via blob URL in iframe (best effort)
           const blobUrl = URL.createObjectURL(blobRes.data);
           setViewer({ title: r.title, embed_url: blobUrl, view_url: data.view_url, isBlob: true, loading: false });
         }
@@ -274,9 +288,9 @@ export default function Resources() {
         </div>
       )}
 
-      {viewer && (
+      {viewer && createPortal(
         <div
-          className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm flex flex-col"
+          className="fixed inset-0 z-[9999] bg-black/95 backdrop-blur-sm flex flex-col"
           data-testid="resource-viewer"
         >
           <div className="flex items-center justify-between px-5 py-3 border-b border-border bg-card/90">
@@ -323,7 +337,8 @@ export default function Resources() {
               />
             )}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

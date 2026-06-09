@@ -14,6 +14,7 @@ pdfjs.GlobalWorkerOptions.workerSrc = new URL(
 export default function PdfCanvasViewer({ blob }) {
   const [numPages, setNumPages] = useState(0);
   const [pageNumber, setPageNumber] = useState(1);
+  const [pageInput, setPageInput] = useState("1");
   const [scale, setScale] = useState(1.2);
   const [containerWidth, setContainerWidth] = useState(0);
   const wrapRef = useRef(null);
@@ -28,16 +29,35 @@ export default function PdfCanvasViewer({ blob }) {
     return () => ro.disconnect();
   }, []);
 
-  const onLoad = ({ numPages }) => {
-    setNumPages(numPages);
+  const goToPage = (n) => {
+    const clamped = Math.max(1, Math.min(numPages || n, n));
+    setPageNumber(clamped);
+    setPageInput(String(clamped));
+  };
+
+  const onLoad = ({ numPages: total }) => {
+    setNumPages(total);
     setPageNumber(1);
+    setPageInput("1");
+  };
+
+  const jumpToPage = () => {
+    const n = parseInt(pageInput, 10);
+    if (!isNaN(n) && n >= 1 && n <= (numPages || 1)) {
+      setPageNumber(n);
+    } else {
+      setPageInput(String(pageNumber));
+    }
   };
 
   if (!blob) return null;
 
   return (
     <div className="w-full h-full flex flex-col bg-neutral-900">
-      <div className="px-4 py-2 border-b border-border bg-card/90 flex items-center justify-center gap-2 text-xs mono">
+      <div
+        className="sticky top-0 z-10 px-4 py-2 border-b border-border bg-card/95 backdrop-blur flex items-center justify-center gap-2 text-xs mono shrink-0"
+        data-testid="pdf-toolbar"
+      >
         <Button
           size="sm"
           variant="outline"
@@ -47,13 +67,24 @@ export default function PdfCanvasViewer({ blob }) {
         >
           <ChevronLeft className="w-3.5 h-3.5" />
         </Button>
-        <span className="px-2">
-          Page <span className="text-foreground">{pageNumber}</span> / {numPages || "…"}
+        <span className="px-2 flex items-center gap-1">
+          <input
+            type="number"
+            value={pageInput}
+            min={1}
+            max={numPages || 1}
+            onChange={(e) => setPageInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") jumpToPage(); }}
+            onBlur={jumpToPage}
+            className="w-14 h-7 px-1 text-center bg-transparent border border-border rounded-md text-foreground"
+            data-testid="pdf-page-input"
+          />
+          <span className="text-muted-foreground">/ {numPages || "…"}</span>
         </span>
         <Button
           size="sm"
           variant="outline"
-          onClick={() => setPageNumber((p) => Math.min(numPages || p, p + 1))}
+          onClick={() => goToPage(pageNumber + 1)}
           disabled={!numPages || pageNumber >= numPages}
           data-testid="pdf-next-page"
         >
@@ -78,7 +109,7 @@ export default function PdfCanvasViewer({ blob }) {
           <ZoomIn className="w-3.5 h-3.5" />
         </Button>
       </div>
-      <div ref={wrapRef} className="flex-1 overflow-auto flex items-start justify-center p-4">
+      <div ref={wrapRef} className="flex-1 overflow-auto bg-neutral-900 flex items-start justify-center p-4">
         <Document
           file={blob}
           onLoadSuccess={onLoad}
