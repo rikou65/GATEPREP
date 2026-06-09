@@ -84,6 +84,19 @@
 .opt-incorrect { @apply border-red-500/60 bg-red-500/10; }
 .opt-missed { @apply border-amber-500/60 bg-amber-500/10; }
 
+/* Native select/option dark dropdown — fixes white-on-white invisible text in Question Bank / PYQ filters */
+select { color-scheme: dark; }
+select option {
+  background-color: hsl(var(--card));
+  color: hsl(var(--foreground));
+  padding: 8px;
+}
+select option:checked,
+select option:hover {
+  background-color: hsl(var(--secondary));
+  color: hsl(var(--foreground));
+}
+
 /* Page entrance */
 .page-enter { animation: fadeUp 0.35s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
 @keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
