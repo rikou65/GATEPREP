@@ -1,0 +1,109 @@
+{
+  "theme": "Dark",
+  "archetype": "4 (Swiss & High-Contrast)",
+  "rationale": "GATE preparation requires intense focus, data clarity, and functional utility over decorative flair. The Swiss & High-Contrast archetype (adapted for a dark-first 'Notion' aesthetic) provides a structured, distraction-free environment ideal for late-night study sessions, complex problem solving, and dense data tracking.",
+  "typography": {
+    "heading_font": "Chivo",
+    "body_font": "IBM Plex Sans",
+    "mono_font": "JetBrains Mono",
+    "hierarchy": {
+      "h1": "text-3xl sm:text-4xl font-bold tracking-tight",
+      "h2": "text-xl sm:text-2xl font-semibold tracking-tight",
+      "h3": "text-lg sm:text-xl font-medium",
+      "h4": "text-base font-medium uppercase tracking-[0.2em] text-muted-foreground",
+      "body": "text-sm sm:text-base leading-relaxed",
+      "small": "text-xs text-muted-foreground",
+      "data": "font-mono text-sm"
+    }
+  },
+  "colors": {
+    "dark": {
+      "background": "#09090B",
+      "surface": "#121214",
+      "surface_hover": "#27272A",
+      "border": "#27272A",
+      "text_primary": "#FAFAFA",
+      "text_secondary": "#A1A1AA",
+      "primary": "#FAFAFA",
+      "primary_foreground": "#09090B",
+      "semantic": {
+        "mcq_correct": "#10B981",
+        "mcq_incorrect": "#EF4444",
+        "msq_partial": "#F59E0B",
+        "nat_neutral": "#3B82F6"
+      }
+    },
+    "light": {
+      "background": "#FFFFFF",
+      "surface": "#F4F4F5",
+      "surface_hover": "#E4E4E7",
+      "border": "#E4E4E7",
+      "text_primary": "#09090B",
+      "text_secondary": "#52525B",
+      "primary": "#09090B",
+      "primary_foreground": "#FAFAFA",
+      "semantic": {
+        "mcq_correct": "#16A34A",
+        "mcq_incorrect": "#DC2626",
+        "msq_partial": "#D97706",
+        "nat_neutral": "#2563EB"
+      }
+    }
+  },
+  "layout": {
+    "strategy": "Control Room Grid",
+    "sidebar": "w-64 fixed h-screen border-r border-border bg-surface/50 backdrop-blur-xl",
+    "main_content": "ml-64 p-6 md:p-8 min-h-screen",
+    "dashboard_grid": "grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4",
+    "card_style": "bg-surface border border-border rounded-lg p-6 shadow-sm hover:border-border/80 transition-colors",
+    "spacing": {
+      "section_gap": "gap-8",
+      "element_gap": "gap-4",
+      "inline_gap": "gap-2"
+    }
+  },
+  "components": {
+    "buttons": "rounded-md font-medium transition-all focus:ring-2 focus:ring-primary/20 hover:-translate-y-[1px]",
+    "inputs": "bg-transparent border border-border rounded-md focus:border-primary focus:ring-1 focus:ring-primary h-10 px-3",
+    "question_viewer": {
+      "container": "border-y border-border py-6 my-6 space-y-4",
+      "solution_inline": "mt-4 p-4 bg-surface/50 border-l-2 border-primary rounded-r-md text-sm",
+      "notes_area": "mt-4 w-full p-3 bg-transparent border border-dashed border-border rounded-md focus:border-primary/50 text-sm"
+    },
+    "mistake_tags": "px-2 py-1 text-xs font-mono rounded-full border border-border/50 bg-surface",
+    "video_player": "w-full aspect-video rounded-lg overflow-hidden border border-border bg-black",
+    "tables": "w-full text-sm text-left border-collapse",
+    "table_row": "border-b border-border hover:bg-surface/50 transition-colors"
+  },
+  "motion": {
+    "hover": "transition-all duration-200 ease-in-out",
+    "expand": "transition-all duration-300 cubic-bezier(0.4, 0, 0.2, 1)",
+    "page_load": "animate-in fade-in slide-in-from-bottom-4 duration-500"
+  },
+  "icons": {
+    "library": "lucide-react",
+    "style": "stroke-[1.5px] text-text_secondary hover:text-text_primary transition-colors"
+  },
+  "images": {
+    "hero_background": {
+      "url": "https://images.unsplash.com/photo-1517241034903-9a4c3ab12f00?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzNDR8MHwxfHNlYXJjaHwzfHxkYXJrJTIwYWJzdHJhY3QlMjBnZW9tZXRyeXxlbnwwfHx8fDE3ODEwMzgyODZ8MA&ixlib=rb-4.1.0&q=85",
+      "description": "Dark abstract wavy lines for login or empty states background overlay"
+    },
+    "default_avatar": {
+      "url": "https://images.unsplash.com/photo-1740252117070-7aa2955b25f8?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzB8MHwxfHNlYXJjaHwyfHxwcm9mZXNzaW9uYWwlMjBtaW5pbWFsJTIwYXZhdGFyJTIwZmFjZXxlbnwwfHx8fDE3ODEwMzgyOTJ8MA&ixlib=rb-4.1.0&q=85",
+      "description": "Default minimalist user avatar"
+    }
+  },
+  "testing": {
+    "data_testid_convention": "kebab-case, role-based (e.g., 'dashboard-stats-card', 'question-mcq-option', 'solution-toggle-btn')"
+  },
+  "strict_rules": [
+    "NEVER compute a combined subject completion percentage.",
+    "NEVER merge Question Bank with PYQs.",
+    "NEVER use manual topic statuses (e.g. 'Done', 'In Progress'). Metrics only.",
+    "Solutions MUST appear inline beneath the question (no modals, no new pages, no PDF viewers).",
+    "YouTube videos MUST play inside the platform via IFrame API.",
+    "All components MUST use Shadcn UI principles but customized for an information-dense 'Notion' feel.",
+    "MUST use data-testid for all interactive and key informational elements."
+  ]
+}
