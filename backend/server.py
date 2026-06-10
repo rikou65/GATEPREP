@@ -782,7 +782,97 @@ async def delete_resource(resource_id: str, user=Depends(get_current_user)):
         except Exception as e:
             logger.warning(f"Drive delete failed for {resource_id}: {e}")
     r = await db.resources.delete_one({"resource_id": resource_id, "user_id": user["user_id"]})
+    # Clean up resource study notes + important pages
+    await db.resource_notes.delete_one({"resource_id": resource_id, "user_id": user["user_id"]})
     return ok({"deleted": r.deleted_count})
+
+
+# ---------- Resource Study Notes + Important Pages ----------
+class ResourceNotesIn(BaseModel):
+    content: Optional[str] = None
+    important_pages: Optional[List[int]] = None
+
+
+@api.get("/resources/{resource_id}/notes")
+async def get_resource_notes(resource_id: str, user=Depends(get_current_user)):
+    # Ownership
+    res = await db.resources.find_one(
+        {"resource_id": resource_id, "user_id": user["user_id"]}, {"_id": 0, "resource_id": 1}
+    )
+    if not res:
+        return err("not_found", "Resource not found", 404)
+    doc = await db.resource_notes.find_one(
+        {"resource_id": resource_id, "user_id": user["user_id"]},
+        {"_id": 0},
+    )
+    return ok(doc or {"content": "", "important_pages": []})
+
+
+@api.post("/resources/{resource_id}/notes")
+async def save_resource_notes(resource_id: str, body: ResourceNotesIn, user=Depends(get_current_user)):
+    res = await db.resources.find_one(
+        {"resource_id": resource_id, "user_id": user["user_id"]}, {"_id": 0, "resource_id": 1}
+    )
+    if not res:
+        return err("not_found", "Resource not found", 404)
+    set_doc: Dict[str, Any] = {"updated_at": iso(now_utc())}
+    if body.content is not None:
+        set_doc["content"] = body.content
+    if body.important_pages is not None:
+        # Normalize: dedupe + sort + drop non-positive ints
+        pages = sorted({int(p) for p in body.important_pages if int(p) > 0})
+        set_doc["important_pages"] = pages
+    await db.resource_notes.update_one(
+        {"resource_id": resource_id, "user_id": user["user_id"]},
+        {"$set": set_doc,
+         "$setOnInsert": {
+            "resource_id": resource_id, "user_id": user["user_id"],
+            "created_at": iso(now_utc()),
+         }},
+        upsert=True,
+    )
+    doc = await db.resource_notes.find_one(
+        {"resource_id": resource_id, "user_id": user["user_id"]}, {"_id": 0}
+    )
+    return ok(doc)
+
+
+class TogglePageIn(BaseModel):
+    page: int
+
+
+@api.post("/resources/{resource_id}/pages/toggle")
+async def toggle_important_page(resource_id: str, body: TogglePageIn, user=Depends(get_current_user)):
+    """Toggle a single page on the important_pages array. Idempotent."""
+    if body.page <= 0:
+        return err("bad_page", "page must be a positive integer", 400)
+    res = await db.resources.find_one(
+        {"resource_id": resource_id, "user_id": user["user_id"]}, {"_id": 0, "resource_id": 1}
+    )
+    if not res:
+        return err("not_found", "Resource not found", 404)
+    existing = await db.resource_notes.find_one(
+        {"resource_id": resource_id, "user_id": user["user_id"]},
+        {"_id": 0, "important_pages": 1},
+    ) or {}
+    pages = set(int(p) for p in existing.get("important_pages", []))
+    if body.page in pages:
+        pages.discard(body.page)
+        action = "removed"
+    else:
+        pages.add(body.page)
+        action = "added"
+    new_pages = sorted(pages)
+    await db.resource_notes.update_one(
+        {"resource_id": resource_id, "user_id": user["user_id"]},
+        {"$set": {"important_pages": new_pages, "updated_at": iso(now_utc())},
+         "$setOnInsert": {
+            "resource_id": resource_id, "user_id": user["user_id"],
+            "content": "", "created_at": iso(now_utc()),
+         }},
+        upsert=True,
+    )
+    return ok({"important_pages": new_pages, "action": action, "page": body.page})
 
 
 # ---------- Google Drive Integration ----------
