@@ -227,8 +227,17 @@ async def list_questions(
         if a["is_correct"]:
             cur["correct"] += 1
         cur["last_correct"] = a["is_correct"]
+    # subject / topic name lookup (used as tags in the UI)
+    sub_ids = {d.get("subject_id") for d in docs if d.get("subject_id")}
+    top_ids = {d.get("topic_id") for d in docs if d.get("topic_id")}
+    subs = {s["subject_id"]: s["name"] async for s in db.subjects.find(
+        {"subject_id": {"$in": list(sub_ids)}}, {"_id": 0, "subject_id": 1, "name": 1})}
+    tops = {t["topic_id"]: t["name"] async for t in db.topics.find(
+        {"topic_id": {"$in": list(top_ids)}}, {"_id": 0, "topic_id": 1, "name": 1})}
     for d in docs:
         d["user_progress"] = by_q.get(d["question_id"], {"count": 0, "correct": 0, "last_correct": None})
+        d["subject_name"] = subs.get(d.get("subject_id"), "")
+        d["topic_name"] = tops.get(d.get("topic_id"), "")
     return ok({"items": docs, "total": total})
 
 @api.get("/questions/{question_id}")
@@ -328,8 +337,16 @@ async def list_pyqs(
         if a["is_correct"]:
             cur["correct"] += 1
         cur["last_correct"] = a["is_correct"]
+    sub_ids = {d.get("subject_id") for d in docs if d.get("subject_id")}
+    top_ids = {d.get("topic_id") for d in docs if d.get("topic_id")}
+    subs = {s["subject_id"]: s["name"] async for s in db.subjects.find(
+        {"subject_id": {"$in": list(sub_ids)}}, {"_id": 0, "subject_id": 1, "name": 1})}
+    tops = {t["topic_id"]: t["name"] async for t in db.topics.find(
+        {"topic_id": {"$in": list(top_ids)}}, {"_id": 0, "topic_id": 1, "name": 1})}
     for d in docs:
         d["user_progress"] = by_p.get(d["pyq_id"], {"count": 0, "correct": 0, "last_correct": None})
+        d["subject_name"] = subs.get(d.get("subject_id"), "")
+        d["topic_name"] = tops.get(d.get("topic_id"), "")
     return ok({"items": docs, "total": total})
 
 @api.get("/pyqs/{pyq_id}")
@@ -948,6 +965,24 @@ async def resource_stream(resource_id: str, user=Depends(get_current_user)):
 
 
 # ---------- Dashboard / Analytics ----------
+def _latest_attempts_per(attempts: List[Dict[str, Any]], key: str) -> List[Dict[str, Any]]:
+    """Reduce attempts to the most recent one per `key` (question_id / pyq_id).
+
+    Accuracy is computed against the LATEST attempt per question so re-attempting
+    a previously-wrong question fully overwrites the earlier failure. ISO-8601
+    `attempted_at` strings compare lexicographically.
+    """
+    by_key: Dict[str, Dict[str, Any]] = {}
+    for a in attempts:
+        k = a.get(key)
+        if not k:
+            continue
+        existing = by_key.get(k)
+        if existing is None or a.get("attempted_at", "") > existing.get("attempted_at", ""):
+            by_key[k] = a
+    return list(by_key.values())
+
+
 def _accuracy(attempts: List[Dict[str, Any]]) -> float:
     if not attempts:
         return 0.0
@@ -956,22 +991,25 @@ def _accuracy(attempts: List[Dict[str, Any]]) -> float:
 
 
 def _progress_bucket(attempts: List[Dict[str, Any]], total: int, key: str) -> Dict[str, Any]:
-    solved = len({a[key] for a in attempts})
+    latest = _latest_attempts_per(attempts, key)
+    solved = len(latest)
     return {
         "total": total, "solved": solved, "remaining": total - solved,
-        "accuracy": _accuracy(attempts),
+        "accuracy": _accuracy(latest),
     }
 
 
 def _overall_summary(qa: List[Dict[str, Any]], pa: List[Dict[str, Any]],
                     counts: Dict[str, int]) -> Dict[str, Any]:
+    latest_qa = _latest_attempts_per(qa, "question_id")
+    latest_pa = _latest_attempts_per(pa, "pyq_id")
     return {
         "questions_solved": len({a["question_id"] for a in qa}),
         "pyqs_solved": len({a["pyq_id"] for a in pa}),
         "videos_completed": counts["videos_done"],
         "total_playlists": counts["playlists"],
-        "question_accuracy": _accuracy(qa),
-        "pyq_accuracy": _accuracy(pa),
+        "question_accuracy": _accuracy(latest_qa),
+        "pyq_accuracy": _accuracy(latest_pa),
         "total_mistakes": counts["mistakes"],
         "resources_uploaded": counts["resources"],
     }

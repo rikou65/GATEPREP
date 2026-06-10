@@ -92,9 +92,19 @@ export default function QuestionViewer({ item, type = "question", onAttempted })
 
   return (
     <div className="border-y border-border py-6 my-6 space-y-5" data-testid={`q-viewer-${id}`}>
-      <div className="flex items-start gap-3 flex-wrap">
+      <div className="flex items-start gap-1.5 flex-wrap">
+        {item.subject_name && (
+          <Badge variant="secondary" className="text-[10px] font-medium" data-testid="q-subject-tag">
+            {item.subject_name}
+          </Badge>
+        )}
+        {item.topic_name && (
+          <Badge variant="secondary" className="text-[10px] font-medium" data-testid="q-topic-tag">
+            {item.topic_name}
+          </Badge>
+        )}
         <Badge variant="outline" className="mono text-[10px]">{item.question_type}</Badge>
-        <Badge variant="outline" className="mono text-[10px]">{item.difficulty}</Badge>
+        {item.difficulty && <Badge variant="outline" className="mono text-[10px]">{item.difficulty}</Badge>}
         {item.year && <Badge variant="outline" className="mono text-[10px]">GATE {item.year}</Badge>}
         {item.source && <Badge variant="outline" className="mono text-[10px]">{item.source}</Badge>}
       </div>

@@ -17,6 +17,13 @@ export default function PYQs() {
   const [items, setItems] = useState([]);
   const [idx, setIdx] = useState(0);
 
+  // Sync filter with URL params (so navigation from Topic → PYQs pre-filters)
+  useEffect(() => {
+    const s = search.get("subject_id") || "";
+    const t = search.get("topic_id") || "";
+    setFilter((f) => ({ ...f, subject_id: s, topic_id: t }));
+  }, [search]);
+
   useEffect(() => { api.get("/subjects").then(r => setSubjects(r.data?.data || [])); }, []);
   useEffect(() => {
     if (!filter.subject_id) { setTopics([]); return; }

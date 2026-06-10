@@ -1,25 +1,28 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { useSearchParams } from "react-router-dom";
 import QuestionViewer from "@/components/QuestionViewer";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { ChevronLeft, ChevronRight, CheckCircle2 } from "lucide-react";
 
 export default function QuestionBank() {
   const [search] = useSearchParams();
-  const subject_id = search.get("subject_id");
-  const topic_id = search.get("topic_id");
   const [subjects, setSubjects] = useState([]);
   const [topics, setTopics] = useState([]);
   const [filter, setFilter] = useState({
-    subject_id: subject_id || "",
-    topic_id: topic_id || "",
+    subject_id: search.get("subject_id") || "",
+    topic_id: search.get("topic_id") || "",
     question_type: "",
-    difficulty: "",
   });
   const [items, setItems] = useState([]);
   const [idx, setIdx] = useState(0);
+
+  // Sync filter with URL params (so navigation from Topic → QBank pre-filters)
+  useEffect(() => {
+    const s = search.get("subject_id") || "";
+    const t = search.get("topic_id") || "";
+    setFilter((f) => ({ ...f, subject_id: s, topic_id: t }));
+  }, [search]);
 
   useEffect(() => { api.get("/subjects").then(r => setSubjects(r.data?.data || [])); }, []);
   useEffect(() => {
@@ -57,11 +60,6 @@ export default function QuestionBank() {
           className="h-9 px-3 text-sm bg-transparent border border-border rounded-md">
           <option value="">All types</option>
           <option>MCQ</option><option>MSQ</option><option>NAT</option>
-        </select>
-        <select value={filter.difficulty} onChange={(e) => setFilter(f => ({ ...f, difficulty: e.target.value }))}
-          className="h-9 px-3 text-sm bg-transparent border border-border rounded-md">
-          <option value="">All difficulties</option>
-          <option>Easy</option><option>Medium</option><option>Hard</option>
         </select>
       </div>
 

@@ -28,8 +28,8 @@ export default function TopicDetail() {
       </div>
 
       <div className="flex gap-3">
-        <Link to={`/questions?topic_id=${id}`} className="px-4 py-2 text-sm border border-border rounded-md hover:border-foreground/40" data-testid="open-qbank-btn">Open Question Bank →</Link>
-        <Link to={`/pyqs?topic_id=${id}`} className="px-4 py-2 text-sm border border-border rounded-md hover:border-foreground/40" data-testid="open-pyqs-btn">Open PYQs →</Link>
+        <Link to={`/questions?subject_id=${t.subject_id}&topic_id=${id}`} className="px-4 py-2 text-sm border border-border rounded-md hover:border-foreground/40" data-testid="open-qbank-btn">Open Question Bank →</Link>
+        <Link to={`/pyqs?subject_id=${t.subject_id}&topic_id=${id}`} className="px-4 py-2 text-sm border border-border rounded-md hover:border-foreground/40" data-testid="open-pyqs-btn">Open PYQs →</Link>
       </div>
     </div>
   );
