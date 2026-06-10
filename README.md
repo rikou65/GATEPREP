@@ -86,7 +86,16 @@ Every incorrect attempt across Question Bank and PYQs lands here automatically. 
 - We auto-provision a `GATEPREP/{PDF|Notes|Other}/{Subject}/` hierarchy in your Drive.
 - Uploads stream through the backend → pushed to Drive → metadata stored in MongoDB.
 - **Inline PDF rendering** via `pdfjs-dist` on a `<canvas>` — bypasses Brave/Chrome third-party-cookie blocks that break Google’s native Drive iframe viewer.
-- Sticky toolbar with **page jump**, in-session blob cache (no re-downloads), Portal-rendered modal (no sidebar overlap).
+- **Continuous multi-page scroll** with windowed canvas rendering (only ±2 pages around viewport render heavy canvas; rest are lightweight placeholders) — handles 200+ page PDFs without melting the browser.
+- Sticky dark-themed toolbar: page navigation, direct page input, zoom in/out, fit-to-width toggle, keyboard shortcuts (←/→, PageUp/Down, Esc).
+- Modal mounted via React Portal but offset `lg:left-64` so the **sidebar stays visible**; `dark` class scoped on the portal so Tailwind dark vars resolve correctly.
+- In-session blob cache so reopening the same PDF doesn't re-stream from Drive.
+
+### Topic Concepts *(planned — Phase 5)*
+- Each topic page will surface a **"Key Concepts"** section above the QBank / PYQ links.
+- Concepts are short, dense, LaTeX-rendered summaries imported from the GateOverflow **GO-PDFs** corpus and any other admin-uploaded PDFs.
+- Stored in `topic_concepts` with `position`, `source`, `source_url` (attribution preserved).
+- See [`IMPLEMENTATION_PLAN.md`](./IMPLEMENTATION_PLAN.md#phase-5--pdf-import--ocr-pipeline-) for the full pipeline.
 
 ### Admin Portal
 - CRUD for Subjects, Topics, Questions, PYQs.
@@ -267,6 +276,20 @@ Routes are mounted under `/api`. Auth required unless noted.
 - Mirror for `/api/admin/pyqs/...`
 - `POST /api/admin/seed` *(dev only)*
 
+### Topic Concepts *(planned — Phase 5)*
+- `GET  /api/topics/{id}/concepts` — list concepts for a topic (ordered by `position`)
+- `POST /api/admin/concepts`, `PUT /api/admin/concepts/{id}`, `DELETE /api/admin/concepts/{id}`
+
+### OCR Import Pipeline *(planned — Phase 5)*
+- `POST /api/admin/imports/pdf` *(multipart)* — start a new OCR import
+- `GET  /api/admin/imports`, `GET /api/admin/imports/{id}` — progress + summary
+- `GET  /api/admin/imports/{id}/extracted-concepts` — paginated staging rows
+- `GET  /api/admin/imports/{id}/extracted-questions` — paginated staging rows
+- `PUT  /api/admin/imports/extracted-{concepts|questions}/{id}` — inline edit
+- `POST /api/admin/imports/extracted-{concepts|questions}/{id}/{approve|reject|merge}`
+- `POST /api/admin/imports/{id}/bulk-approve` — `{min_confidence, type}`
+- CLI: `python -m backend.scripts.import_go_pdfs` — one-shot bulk import of latest GateOverflow `GO-PDFs` release
+
 ---
 
 ## Local development
@@ -339,13 +362,16 @@ pytest -v
 Tracked in `memory/PRD.md`. The short version:
 
 ### 🔴 P0 — In flight
-- **PDF Import + OCR Pipeline** (the moonshot feature)
-  - Upload PDF (PYQ booklet, hand-written notes, textbook chapter)
-  - **Gemini Nano Banana** via Emergent LLM key → OCR + structural extraction
-  - Auto-classify question type (MCQ/MSQ/NAT) and detect options, answer, solution
-  - Map to subject/topic via syllabus-aware prompting
-  - **Duplicate detection** against existing bank (text-hash + semantic similarity)
-  - **Review Queue** in Admin → human approves/edits before commit
+- **PDF Import + OCR Pipeline** (the moonshot feature) — *now scoped to GateOverflow `GO-PDFs` ingestion*
+  - Source corpus: https://github.com/GATEOverflow/GO-PDFs releases (every GATE CSE PYQ since 1987 + topic-wise volumes containing **both key concepts and questions**, freely published by the GO admins).
+  - Upload any PDF → **Gemini Nano Banana** via Emergent LLM key → dual extraction:
+    - **Key concept sections** (title + LaTeX content) → committed to new `topic_concepts` collection → surfaced on TopicDetail pages.
+    - **Questions** (MCQ/MSQ/NAT with options, answer, solution) → committed to `questions` / `pyqs`.
+  - Syllabus-aware topic/subject mapping for both.
+  - **Duplicate detection**: text-hash + semantic similarity.
+  - **Two parallel Review Queues** in Admin (Concepts | Questions). Human approves/edits before commit.
+  - **One-shot CLI importer** for the full GO-PDFs release.
+  - Attribution (`source`, `source_url`) preserved on every imported item.
 
 ### 🟡 P1 — Next
 - **Pagination** on Question Bank and PYQs (currently full lists)

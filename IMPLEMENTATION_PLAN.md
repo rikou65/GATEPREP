@@ -64,89 +64,166 @@ Ship one phase end-to-end before starting the next. No half-finished features in
 ## Phase 5 — PDF Import + OCR Pipeline 🔴
 
 ### Goal
-Let admins upload a PDF (PYQ booklet, textbook chapter, hand-written notes) and have the system extract structured questions, classify them, map them to topics, detect duplicates, and queue them for human review before they enter the question bank.
+Ingest the **GateOverflow `GO-PDFs` corpus** (every GATE CSE PYQ since 1987 + topic-wise volumes containing both key concepts and questions) and let admins also upload arbitrary PDFs (textbook chapters, hand-written notes). The pipeline extracts structured **key concepts** and **questions**, classifies them, maps them to subject/topic, detects duplicates, and queues them for human review before they enter the live bank.
 
 ### Why now
-This is the **moonshot**. Every other GATE platform ships pre-curated questions. We let the user grow their bank from any source. It also turns the PYQ archive (40+ years of papers) into a 1-evening import job instead of a 1-year manual data-entry chore.
+This is the **moonshot**. It does two things simultaneously:
+1. Turns the GO-PDFs (~40 years of curated PYQs + topic-wise key concept material) into a 1-evening import job instead of a 1-year manual data-entry chore.
+2. Establishes the OCR pipeline so any future PDF (textbook chapter, scanned notes, coaching booklet) becomes ingestible the same way.
+
+### Source corpus
+- **Primary:** https://github.com/GATEOverflow/GO-PDFs releases — comprehensive PDFs published by the GO admins themselves under CC-style attribution norms. Contains:
+  - **Year-wise PYQ volumes** (1987 → latest GATE).
+  - **Topic-wise volumes** (Engineering Mathematics, Discrete Math, DSA, OS, DBMS, CN, COA, TOC, Compilers, Digital Logic, Algorithms, Aptitude) — these contain **both key concept summaries and questions on the same topic**.
+- **Secondary:** any admin-uploaded PDF (custom path through the same pipeline).
 
 ### Scope
 
 **In:**
-- PDF upload through Admin → backend pipeline → Review Queue UI.
-- Gemini Nano Banana (via Emergent LLM key) for OCR + structural extraction.
-- Auto-classify type (MCQ / MSQ / NAT) and detect options, correct answer, solution.
-- Subject/Topic suggestion using a syllabus-aware prompt.
-- Duplicate detection (text-hash + cosine similarity on embeddings).
-- Review Queue with approve / edit / reject / merge-with-duplicate actions.
-- Bulk approve.
+- Download GO-PDFs latest release via GitHub API (one-shot CLI script).
+- Admin upload of arbitrary PDFs through the same pipeline.
+- Gemini Nano Banana (via Emergent Universal LLM key) for OCR + **dual-mode structural extraction**:
+  - **Key concept sections** → `{title, content_markdown, suggested_topic, confidence}`
+  - **Questions** → `{question_text, type, options, correct_answer, solution, suggested_subject, suggested_topic, confidence}`
+- Per-page content-type classification (concepts only / questions only / mixed).
+- Subject/Topic suggestion using a syllabus-aware prompt (12 GATE CSE subjects baked in).
+- Duplicate detection:
+  - Concepts: text-hash on normalised title + content; later, embedding cosine.
+  - Questions: text-hash on question_text + options; embedding cosine ≥ 0.92.
+- **Two parallel Review Queues** in Admin:
+  - `extracted_concepts` → reviewed → committed to `topic_concepts`.
+  - `extracted_questions` → reviewed → committed to `questions` / `pyqs`.
+- Bulk approve above a confidence threshold.
+- Attribution: every imported item stores `source` (e.g., `"GateOverflow Digital Logic v4"`) and `source_url`.
 
 **Out (intentionally):**
-- Live OCR feedback (we'll show "processing" status; user comes back to it).
-- Image extraction from questions (Phase 5.5 if user demands it).
-- Math rendering inside extracted questions (handled in Phase 7 via KaTeX).
-- Non-PDF input (images, DOCX) — Phase 5.5.
+- Image extraction from inside questions (Phase 5.5).
+- Live OCR feedback (we show "processing", user returns to the queue later).
+- DOCX/image inputs (Phase 5.5).
+- Math rendering inside the queue UI (handled in Phase 7 via KaTeX — but the **extracted markdown already contains LaTeX** so Phase 7 unlocks display).
 
 ### User stories
-1. As an admin, I upload `GATE_2023_CSE.pdf` and within ~2 minutes see N extracted questions in a Review Queue.
-2. As an admin, I see each extracted question with: question text, options, suggested answer, suggested subject + topic, confidence score, and a "likely duplicate of X" warning if applicable.
-3. As an admin, I can edit any field inline, then click **Approve** to commit to `pyqs` (or `questions`).
-4. As an admin, I can bulk-approve all questions above a confidence threshold.
+1. **As an admin**, I run `python -m backend.scripts.import_go_pdfs` and within ~1–2 hours I see N extracted concepts + M extracted questions in two review queues.
+2. **As an admin**, I upload `GATE_2025_CSE.pdf` and within ~2 minutes see its concepts and questions extracted.
+3. **As an admin**, each extracted item shows confidence + suggested subject/topic + duplicate warnings + source attribution. I can edit any field inline, then approve.
+4. **As an admin**, I can bulk-approve everything above 0.85 confidence.
+5. **As a student**, when I open a topic detail page I now see a **"Key Concepts"** section above the QBank/PYQ buttons — short, dense, LaTeX-rendered summaries imported from the GO-PDFs corpus.
 
 ### Technical breakdown
 
-#### Backend
-- **New collections:**
-  - `pdf_imports` — `{id, user_id, filename, drive_file_id, status, total_pages, processed_pages, total_questions_extracted, created_at, completed_at, error}`
-  - `extracted_questions` — `{id, import_id, page_number, raw_text, question_text, type, options, correct_answer, solution, subject_id_suggested, topic_id_suggested, confidence, duplicate_of, status: pending|approved|rejected|merged, reviewed_by, reviewed_at}`
-- **New endpoints:**
-  - `POST /api/admin/imports/pdf` *(multipart)* → uploads PDF, creates `pdf_imports` row, kicks off async job, returns `import_id`.
-  - `GET  /api/admin/imports/{id}` → progress + summary.
-  - `GET  /api/admin/imports/{id}/extracted` → paginated extracted questions.
-  - `PUT  /api/admin/imports/extracted/{id}` → edit a single extracted question.
-  - `POST /api/admin/imports/extracted/{id}/approve` → commit to `questions` or `pyqs`.
-  - `POST /api/admin/imports/extracted/{id}/reject`
-  - `POST /api/admin/imports/extracted/{id}/merge` → `{target_id}` — drop this one, mark canonical.
-  - `POST /api/admin/imports/{id}/bulk-approve` → `{min_confidence}`.
-- **Async pipeline (FastAPI BackgroundTasks for v1, Celery/RQ later):**
-  1. PDF → page splitter (`pdfplumber` or `PyMuPDF`).
-  2. Each page → image (300 DPI) — Gemini Nano Banana handles vision directly, so we send images, not extracted text. This gives us better fidelity on math, tables, and hand-written content.
-  3. Page image → Gemini prompt: "Extract every question on this page as JSON matching this schema…". Use **structured output** (`response_mime_type: application/json`).
-  4. Per extracted question → second Gemini call with the syllabus-aware classifier prompt: "Given GATE CSE syllabus [...], assign subject_id and topic_id."
-  5. Compute SHA-256 of normalised question text; check against existing `questions`/`pyqs` for **exact duplicates** → if hit, mark `duplicate_of`.
-  6. Compute embedding (`text-embedding-3-small` or Gemini embeddings) → cosine similarity ≥ 0.92 → mark as **likely duplicate** with a lower-confidence flag.
-  7. Update `pdf_imports.processed_pages` after each page so the UI can show progress.
-- **Prompt engineering** lives in `backend/prompts/`:
-  - `ocr_extract.md`
-  - `topic_classify.md` (contains the full syllabus tree, regenerated from DB at startup)
-- **Concurrency:** rate-limit Gemini calls to N/sec (configurable env var), exponential backoff on 429.
+#### New data model
+**Existing untouched.** Add **one new collection** — `topic_concepts`:
+```
+concept_id        string (pk)
+topic_id          string (fk → topics)
+subject_id        string (fk, denormalised)
+title             string
+content_markdown  string   (LaTeX inside $...$ blocks)
+position          int      (display order within topic)
+source            string   (e.g., "GateOverflow Digital Logic v4")
+source_url        string   (back-link for attribution)
+created_at, updated_at
+```
+
+Plus two **staging collections** for the pipeline:
+- `pdf_imports` — `{id, user_id, filename, drive_file_id|local_path, status, total_pages, processed_pages, total_concepts_extracted, total_questions_extracted, created_at, completed_at, error}`
+- `extracted_concepts` — staging row per extracted concept: `{id, import_id, page_number, title, content_markdown, suggested_subject_id, suggested_topic_id, confidence, duplicate_of, source, source_url, status: pending|approved|rejected|merged, reviewed_by, reviewed_at}`
+- `extracted_questions` — same shape as before + `source`, `source_url`.
+
+#### New backend endpoints
+- `POST /api/admin/imports/pdf` *(multipart)* — kicks off async pipeline, returns `import_id`.
+- `GET  /api/admin/imports` — list all imports with status.
+- `GET  /api/admin/imports/{id}` — progress + summary.
+- `GET  /api/admin/imports/{id}/extracted-concepts` — paginated.
+- `GET  /api/admin/imports/{id}/extracted-questions` — paginated.
+- `PUT  /api/admin/imports/extracted-concepts/{id}` — edit.
+- `PUT  /api/admin/imports/extracted-questions/{id}` — edit.
+- `POST /api/admin/imports/extracted-concepts/{id}/approve` → commit to `topic_concepts`.
+- `POST /api/admin/imports/extracted-questions/{id}/approve` → commit to `questions` or `pyqs`.
+- `POST /api/admin/imports/extracted-{concepts|questions}/{id}/reject`.
+- `POST /api/admin/imports/extracted-{concepts|questions}/{id}/merge` → `{target_id}`.
+- `POST /api/admin/imports/{id}/bulk-approve` → `{min_confidence, type: concepts|questions|all}`.
+- `GET  /api/topics/{id}/concepts` — public (auth required) — list concepts for a topic.
+- Admin CRUD for `topic_concepts`: `POST /api/admin/concepts`, `PUT /api/admin/concepts/{id}`, `DELETE /api/admin/concepts/{id}`.
+
+#### Async pipeline (FastAPI BackgroundTasks for v1; Celery later if cost demands it)
+1. PDF → page splitter (`PyMuPDF`).
+2. Each page → 300 DPI image — Gemini Nano Banana handles vision directly (better fidelity on math, tables, hand-written content than text-extraction).
+3. Page image → Gemini prompt: *"Extract every key-concept section AND every question on this page as JSON matching this schema…"* Use **structured output** (`response_mime_type: application/json`).
+4. For each extracted item → second Gemini call with syllabus-aware classifier: *"Given the GATE CSE syllabus [...], assign subject_id and topic_id."*
+5. Duplicate detection (text-hash now, embeddings later).
+6. Update `pdf_imports.processed_pages` per page so the UI can show progress.
+
+#### Prompt assets (`backend/prompts/`)
+- `ocr_extract.md` — extracts both concepts and questions in one call.
+- `topic_classify.md` — full syllabus tree as context, regenerated from DB at startup.
+
+#### Concurrency & cost
+- Rate-limit Gemini calls (env var, default 2/sec) with exponential backoff on 429.
+- Track per-import cost estimate; surface in the admin UI before kicking off ("estimated cost: $X").
+- Hard daily budget cap per user.
 
 #### Frontend
-- **New page:** `pages/AdminImports.jsx` — list of imports with status pills, click to drill in.
-- **New page:** `pages/AdminImportReview.jsx` — table of `extracted_questions`:
-  - Columns: page, question preview, type, suggested topic, confidence, duplicate-of, status, actions.
-  - Filters: status, type, confidence range, "has duplicate".
-  - Row click → inline expand with full editor (`QuestionEditor.jsx` — reusable).
-  - Sticky toolbar: "Approve selected", "Bulk approve ≥ 0.85 confidence", "Reject selected".
-- **Reusable component:** `QuestionEditor.jsx` — used here, in Admin CRUD (Phase 6), and anywhere else we edit a question.
+- **`pages/AdminImports.jsx`** — list of imports with status pills.
+- **`pages/AdminImportReview.jsx`** — two tabs: **Concepts** | **Questions**. Each tab is a paginated table with inline editors and bulk-approve toolbar.
+- **`components/QuestionEditor.jsx`** — reusable (used here + in Phase 6 edit flow).
+- **`components/ConceptEditor.jsx`** — reusable.
+- **`pages/TopicDetail.jsx`** — add a **"Key Concepts"** section above the Open QBank / Open PYQs buttons:
+  - Stacked accordion of concepts, ordered by `position`.
+  - Each concept card: title + KaTeX-rendered markdown + source attribution footer.
+  - Admin-only inline edit / delete.
+  - Empty state encourages admin to run the importer.
 
-#### Risks & mitigations
-| Risk                                          | Mitigation                                                                                  |
-| --------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| Gemini hallucinates options / answers         | Confidence score + review queue is mandatory; nothing auto-commits.                          |
-| Large PDFs blow up memory                     | Process page-by-page; stream the file from disk, never load whole PDF.                       |
-| Cost runaway on Emergent LLM key              | Per-user daily quota; surface "estimated cost: $X" before kicking off.                      |
-| Duplicate detection misses paraphrases        | Two-layer: exact hash + embedding cosine. Tune threshold after first 500 real imports.       |
-| Math-heavy questions extract poorly           | Send images to Gemini (vision) not pre-extracted text; pair with KaTeX rendering (Phase 7). |
+#### One-shot importer CLI
+`backend/scripts/import_go_pdfs.py`:
+1. Hits GitHub API for latest release tag of `GATEOverflow/GO-PDFs`.
+2. Downloads all PDFs to `backend/data/go_pdfs/`.
+3. POSTs each to `/api/admin/imports/pdf` using an admin JWT.
+4. Polls progress endpoints.
+5. Prints a final summary table:
+   ```
+   PDF                              pages   concepts   questions   duplicates
+   GATE-CSE-1987-2024.pdf            520        0          3210         42
+   Digital-Logic-v4.pdf               85       28           120          7
+   ...
+   ```
 
-#### Acceptance criteria
-- [ ] Upload a real GATE PYQ PDF (`GATE_2023_CSE.pdf`) and end up with ≥ 80% of questions extracted correctly.
-- [ ] Confidence score is calibrated: ≥ 0.85 questions are correct ≥ 90% of the time on a 50-question sample.
-- [ ] Duplicate detection catches 100% of exact-text duplicates and ≥ 80% of paraphrases.
-- [ ] Admin can go from "PDF on disk" to "100 PYQs in bank" in ≤ 10 minutes of human time.
-- [ ] No Gemini call is made without an explicit user action (no auto-retry storms).
+### Risks & mitigations
+| Risk | Mitigation |
+|---|---|
+| Gemini hallucinates options / answers | Confidence + mandatory review queue; nothing auto-commits. |
+| Concept boundaries are fuzzy (where does one concept end and the next begin?) | Provide the model with explicit page-layout cues + topic taxonomy; tune prompt iteratively on Reconnaissance Day output. |
+| Large PDFs blow up memory | Process page-by-page; stream from disk. |
+| Gemini cost runaway | Per-user daily quota; show pre-flight estimate; rate-limit. |
+| Duplicate detection misses paraphrases | Two-layer: exact hash + embedding cosine. Threshold tuned after first 500 imports. |
+| Math-heavy concepts/questions extract poorly | Vision-first (send images, not extracted text); KaTeX rendering (Phase 7) closes the display loop. |
+| GO-PDFs license drift | Store `source` + `source_url` on every imported item; display "from GateOverflow" attribution badge in the UI. |
 
-#### Estimated effort
-**8–12 engineer-days.** This is the biggest single feature. Budget accordingly.
+### Acceptance criteria
+- [ ] Reconnaissance doc filed: sample of 3 GO-PDFs analysed, structure documented.
+- [ ] `topic_concepts` collection exists with the schema above.
+- [ ] `GET /api/topics/{id}/concepts` returns concepts in `position` order.
+- [ ] TopicDetail page renders a Key Concepts section with KaTeX (or graceful fallback if Phase 7 hasn't shipped yet).
+- [ ] Admin can upload a real GATE PYQ PDF and end up with ≥ 80% of questions extracted correctly.
+- [ ] Admin can upload a real GO topic-wise PDF and end up with key concepts in the review queue, mapped to the right topic ≥ 80% of the time.
+- [ ] Confidence ≥ 0.85 items are correct ≥ 90% of the time on a 50-item sample.
+- [ ] Bulk approve works for both concepts and questions queues independently.
+- [ ] One-shot importer CLI runs end-to-end on the latest GO-PDFs release without manual intervention.
+- [ ] Every imported item carries `source` + `source_url`.
+- [ ] No Gemini call without an explicit admin action.
+
+### Estimated effort
+**17–22 engineer-days** (vs. the original 8–12 for questions-only). The concept-handling roughly doubles Phase 5's scope, but you get the full GO-PDFs corpus — concepts + questions + PYQs since 1987 — in one pipeline.
+
+### Sequencing within Phase 5
+1. **Day 0:** Reconnaissance (manual). Download 3 PDFs, document structure, refine the OCR prompt against reality.
+2. **Day 1–2:** `topic_concepts` collection + admin CRUD + TopicDetail UI section (concept-display path works before extraction even exists).
+3. **Day 3–6:** Pipeline scaffolding — `pdf_imports`, `extracted_concepts`, `extracted_questions`, async task runner, single-PDF upload endpoint.
+4. **Day 7–10:** Gemini prompt engineering — single-call dual-output structured JSON; topic classifier prompt; duplicate detection (hash layer first).
+5. **Day 11–14:** Two review queue UIs (Concepts tab + Questions tab) with inline editors + bulk approve.
+6. **Day 15–16:** GitHub-release downloader CLI.
+7. **Day 17–18:** End-to-end dry run on one topic-wise PDF + one PYQ PDF; tune prompts + thresholds.
+8. **Day 19–22:** Full bulk import → admin reviews → backfill of the entire corpus.
 
 ---
 
@@ -438,11 +515,13 @@ A feature isn't "done" until:
 
 | Week | Focus                                                            |
 | ---- | ---------------------------------------------------------------- |
-| 1–2  | **Phase 5** — OCR Pipeline (P0)                                  |
-| 3    | **Phase 6** — Pagination, edit, CSV bulk                         |
-| 4    | **Phase 7** — Global search + KaTeX                              |
-| 5    | **Phase 8A** — Spaced-repetition Mistake Lab                     |
-| 6    | **Smart Today's Plan** + **Streak** (from Suggestions §2 & §4)   |
+| 1    | **Reconnaissance** + `topic_concepts` collection + TopicDetail "Key Concepts" UI section |
+| 2–4  | **Phase 5** — OCR Pipeline (concepts + questions) + Review Queue UIs |
+| 4    | **GO-PDFs CLI importer** + first end-to-end dry run              |
+| 5    | **Bulk import** of full GO-PDFs corpus → admin review + bulk-approve |
+| 5    | **Phase 7 (partial)** — KaTeX rendering for concepts + solutions (prerequisite for displaying imported content well) |
+| 6    | **Phase 6** — Pagination, edit, CSV bulk                         |
+| 6+   | **Smart Today's Plan** + **Streak** (from Suggestions §2 & §4)   |
 
 Re-evaluate after Week 6 against real-user feedback.
 
