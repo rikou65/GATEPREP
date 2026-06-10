@@ -80,6 +80,9 @@ The product should feel like a calm, focused Notion-like surface, telling the us
 - OAuth `drive.file` connect / disconnect flow.
 - Auto-provisioned folder hierarchy in user’s Drive: `GATEPREP/{PDF|Notes|Other}/{Subject}/`.
 - Upload streams through backend → pushes to Drive → stores metadata only.
+- **Sync from Drive** — re-scan `GATEPREP/` and re-attach Drive files into the local DB (recovers from ephemeral-container data loss).
+- **Per-resource study notes** (free-form text, auto-saved with 600ms debounce).
+- **Important pages** — flag the current page in the toolbar, label each bookmark, jump back to any flagged page, flagged-page badge visible inline on the page strip. Right-side panel is toggled on/off via toolbar.
 - **Inline PDF viewer** via custom `PdfCanvasViewer.jsx`:
   - Continuous multi-page scroll with mouse wheel.
   - Windowed rendering (only ±2 pages around viewport render canvas; rest are lightweight placeholders) — handles 200+ page PDFs without melting the browser.
@@ -105,9 +108,9 @@ The product should feel like a calm, focused Notion-like surface, telling the us
 - Whole card is the topic link.
 
 ### Admin
-- Add Question / PYQ forms.
-- Subjects + Topics CRUD.
-- Users list (role gated).
+- Admin role retired. Every authenticated user owns and manages their own Questions/PYQs/Resources.
+- Add Question / PYQ / Subjects / Topics CRUD available to all signed-in users.
+- Users list endpoint remains (read-only) for future moderation needs.
 
 ### Analytics
 - Per-subject + per-topic analytics endpoints.
@@ -186,6 +189,12 @@ Full detail in [`IMPLEMENTATION_PLAN.md`](../IMPLEMENTATION_PLAN.md).
 | SubjectDetail UI redesigned (table → card grid) | ✅ Shipped |
 | Dashboard "By Subject" UI redesigned (table → progress-bar cards) | ✅ Shipped |
 | PdfCanvasViewer: continuous scroll + windowed render + sidebar visible + dark theme | ✅ Shipped |
+| **Admin role removed; Questions/PYQs are per-user** | ✅ Shipped (Feb 2026) |
+| **QB/PYQ filters**: Status / Result / Flag pills + Add/Edit/Delete UI | ✅ Shipped (Feb 2026) |
+| **Sync from Drive** — recover files from `GATEPREP/` into local DB | ✅ Shipped (Feb 2026) |
+| **Resource Notes** (per-PDF auto-saved free-form text) | ✅ Shipped (Feb 2026) |
+| **Important Pages** — flag/label/jump bookmarks inside PDF viewer | ✅ Shipped (Feb 2026) |
+| **Self-hosting kit** — `SELF_HOSTING.md` + `render.yaml` + `vercel.json` + `.env.example` | ✅ Shipped (Feb 2026) |
 | **Key Concepts feature + GO-PDFs ingestion plan** | 📋 Documented (this update) |
 
 ---
