@@ -6,7 +6,7 @@ import pytest
 import requests
 
 BASE_URL: str = os.environ.get(
-    "REACT_APP_BACKEND_URL", "https://syllabus-hub-28.preview.emergentagent.com"
+    "REACT_APP_BACKEND_URL", "https://app-163.preview.emergentagent.com"
 ).rstrip("/")
 API: str = f"{BASE_URL}/api"
 
