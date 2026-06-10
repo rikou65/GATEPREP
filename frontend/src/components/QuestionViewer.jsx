@@ -1,38 +1,41 @@
 import React, { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
-import { Checkbox } from "@/components/ui/checkbox";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { ChevronDown, ChevronUp, Bookmark, Clock, CheckCircle2, XCircle } from "lucide-react";
+import {
+  CheckCircle2, XCircle, ChevronDown, ChevronUp, Bookmark, BookmarkCheck,
+  Star, Clock, Pencil, Trash2,
+} from "lucide-react";
 import { toast } from "sonner";
 
-/**
- * type: "question" | "pyq"
- */
-export default function QuestionViewer({ item, type = "question", onAttempted }) {
+export default function QuestionViewer({ item, type = "question", onAttempted, onEdit, onDeleted, onFlagsChanged }) {
   const id = type === "pyq" ? item.pyq_id : item.question_id;
   const baseUrl = type === "pyq" ? `/pyqs/${id}` : `/questions/${id}`;
-
-  const [selected, setSelected] = useState(item.question_type === "MSQ" ? [] : "");
+  const [selected, setSelected] = useState(null);
   const [natValue, setNatValue] = useState("");
   const [submitted, setSubmitted] = useState(false);
   const [result, setResult] = useState(null);
   const [showSolution, setShowSolution] = useState(false);
+  const [startedAt] = useState(Date.now());
+  const [attempts, setAttempts] = useState([]);
   const [notes, setNotes] = useState("");
   const [savingNote, setSavingNote] = useState(false);
-  const [attempts, setAttempts] = useState([]);
-  const [startedAt] = useState(Date.now());
   const [mistakeType, setMistakeType] = useState("");
+  const [flags, setFlags] = useState(item.flags || []);
+  const [busyFlag, setBusyFlag] = useState(null);
 
   useEffect(() => {
+    api.get(`${baseUrl}/attempts`).then(r => setAttempts(r.data?.data || []));
     if (type === "question") {
-      api.get(`${baseUrl}/notes`).then((r) => setNotes(r.data?.data?.note_content || ""));
+      api.get(`${baseUrl}/notes`).then(r => setNotes(r.data?.data?.note_content || ""));
     }
-    api.get(`${baseUrl}/attempts`).then((r) => setAttempts(r.data?.data || []));
-  }, [baseUrl, type]);
+  }, [id]); // baseUrl is derived from id
+
+  useEffect(() => { setFlags(item.flags || []); }, [item.flags]);
 
   const saveNotes = async () => {
     if (type !== "question") return;
@@ -56,7 +59,7 @@ export default function QuestionViewer({ item, type = "question", onAttempted })
       const fresh = await api.get(`${baseUrl}/attempts`);
       setAttempts(fresh.data?.data || []);
       onAttempted && onAttempted(r.data?.data);
-    } catch (e) { toast.error("Submit failed"); }
+    } catch { toast.error("Submit failed"); }
   };
 
   const logMistake = async () => {
@@ -66,6 +69,37 @@ export default function QuestionViewer({ item, type = "question", onAttempted })
       toast.success("Logged to Mistake Lab");
       setMistakeType("");
     } catch { toast.error("Failed"); }
+  };
+
+  const toggleFlag = async (flagType) => {
+    setBusyFlag(flagType);
+    try {
+      const hasFlag = flags.includes(flagType);
+      let r;
+      if (hasFlag) {
+        r = await api.delete(`${baseUrl}/flag/${flagType}`);
+      } else {
+        r = await api.post(`${baseUrl}/flag`, { flag_type: flagType });
+      }
+      const newFlags = r.data?.data?.flags || [];
+      setFlags(newFlags);
+      onFlagsChanged && onFlagsChanged(id, newFlags);
+      toast.success(hasFlag ? `Unmarked ${flagType}` : `Marked as ${flagType === "review" ? "review" : "important"}`);
+    } catch {
+      toast.error("Could not update flag");
+    }
+    setBusyFlag(null);
+  };
+
+  const handleDelete = async () => {
+    if (!window.confirm(`Delete this ${type === "pyq" ? "PYQ" : "question"}? This also removes attempts, notes and flags.`)) return;
+    try {
+      await api.delete(baseUrl);
+      toast.success("Deleted");
+      onDeleted && onDeleted(id);
+    } catch (e) {
+      toast.error(e?.response?.data?.error?.message || "Delete failed");
+    }
   };
 
   const correctAnswer = result?.correct_answer ?? item.correct_answer;
@@ -90,6 +124,9 @@ export default function QuestionViewer({ item, type = "question", onAttempted })
     return "border-border";
   };
 
+  const hasReview = flags.includes("review");
+  const hasImportant = flags.includes("important");
+
   return (
     <div className="border-y border-border py-6 my-6 space-y-5" data-testid={`q-viewer-${id}`}>
       <div className="flex items-start gap-1.5 flex-wrap">
@@ -107,6 +144,52 @@ export default function QuestionViewer({ item, type = "question", onAttempted })
         {item.difficulty && <Badge variant="outline" className="mono text-[10px]">{item.difficulty}</Badge>}
         {item.year && <Badge variant="outline" className="mono text-[10px]">GATE {item.year}</Badge>}
         {item.source && <Badge variant="outline" className="mono text-[10px]">{item.source}</Badge>}
+        <div className="ml-auto flex items-center gap-1">
+          <button
+            onClick={() => toggleFlag("review")}
+            disabled={busyFlag === "review"}
+            className={`h-7 px-2 rounded-md text-[10px] mono inline-flex items-center gap-1 border transition-colors ${
+              hasReview ? "border-amber-500 text-amber-500 bg-amber-500/10" : "border-border text-muted-foreground hover:text-foreground"
+            }`}
+            data-testid="flag-review-btn"
+            title={hasReview ? "Unmark review" : "Mark for review"}
+          >
+            {hasReview ? <BookmarkCheck className="w-3.5 h-3.5" /> : <Bookmark className="w-3.5 h-3.5" />}
+            review
+          </button>
+          <button
+            onClick={() => toggleFlag("important")}
+            disabled={busyFlag === "important"}
+            className={`h-7 px-2 rounded-md text-[10px] mono inline-flex items-center gap-1 border transition-colors ${
+              hasImportant ? "border-yellow-400 text-yellow-300 bg-yellow-400/10" : "border-border text-muted-foreground hover:text-foreground"
+            }`}
+            data-testid="flag-important-btn"
+            title={hasImportant ? "Unmark important" : "Mark as important"}
+          >
+            <Star className={`w-3.5 h-3.5 ${hasImportant ? "fill-yellow-300" : ""}`} />
+            important
+          </button>
+          {onEdit && (
+            <button
+              onClick={() => onEdit(item)}
+              className="h-7 w-7 inline-flex items-center justify-center rounded-md border border-border text-muted-foreground hover:text-foreground"
+              data-testid="q-edit-btn"
+              title="Edit"
+            >
+              <Pencil className="w-3.5 h-3.5" />
+            </button>
+          )}
+          {onDeleted && (
+            <button
+              onClick={handleDelete}
+              className="h-7 w-7 inline-flex items-center justify-center rounded-md border border-border text-muted-foreground hover:text-red-500"
+              data-testid="q-delete-btn"
+              title="Delete"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="text-base leading-relaxed whitespace-pre-wrap" data-testid="question-text">

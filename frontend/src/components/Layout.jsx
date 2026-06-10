@@ -3,7 +3,7 @@ import { NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import {
   LayoutDashboard, BookOpen, FileQuestion, History, ListVideo,
-  FolderArchive, AlertOctagon, BarChart3, Settings, LogOut, ShieldCheck,
+  FolderArchive, AlertOctagon, BarChart3, Settings, LogOut,
   GraduationCap,
 } from "lucide-react";
 
@@ -54,22 +54,6 @@ export default function Layout({ children }) {
               {n.label}
             </NavLink>
           ))}
-          {user?.is_admin && (
-            <NavLink
-              to="/admin"
-              data-testid="nav-admin"
-              className={({ isActive }) =>
-                `flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors ${
-                  isActive
-                    ? "bg-secondary text-foreground"
-                    : "text-muted-foreground hover:text-foreground hover:bg-secondary/50"
-                }`
-              }
-            >
-              <ShieldCheck className="w-4 h-4" strokeWidth={1.6} />
-              Admin
-            </NavLink>
-          )}
         </nav>
         <div className="p-3 border-t border-border">
           <div className="flex items-center gap-3 px-2 py-2">

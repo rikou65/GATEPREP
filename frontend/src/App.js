@@ -19,7 +19,6 @@ import PlaylistDetail from "@/pages/PlaylistDetail";
 import Resources from "@/pages/Resources";
 import Analytics from "@/pages/Analytics";
 import Settings from "@/pages/Settings";
-import Admin from "@/pages/Admin";
 
 function AppRouter() {
   const location = useLocation();
@@ -42,7 +41,6 @@ function AppRouter() {
       <Route path="/resources" element={<ProtectedRoute><Resources /></ProtectedRoute>} />
       <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
       <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
-      <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
     </Routes>
   );
 }

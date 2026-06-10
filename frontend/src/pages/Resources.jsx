@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { FolderArchive, Plus, ExternalLink, Trash2, Upload, FileText, HardDrive, X, Maximize2 } from "lucide-react";
+import { FolderArchive, Plus, ExternalLink, Trash2, Upload, FileText, HardDrive, X, Maximize2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { Link } from "react-router-dom";
 import PdfCanvasViewer from "@/components/PdfCanvasViewer";
@@ -33,6 +33,32 @@ export default function Resources() {
   const [viewer, setViewer] = useState(null);
   const fileRef = useRef(null);
   const blobCache = useRef(new Map()); // resource_id -> Blob (cached for this session)
+  const [syncing, setSyncing] = useState(false);
+  const [lastSync, setLastSync] = useState(null);
+
+  const runSync = async () => {
+    if (!driveStatus?.connected) {
+      toast.error("Connect Google Drive first (Settings)");
+      return;
+    }
+    setSyncing(true);
+    try {
+      const r = await api.post("/drive/sync");
+      const d = r.data?.data || {};
+      setLastSync(d);
+      if (d.error === "no_gateprep_folder") {
+        toast.info("No existing GATEPREP folder found in your Drive.");
+      } else if (d.synced > 0) {
+        toast.success(`Restored ${d.synced} file${d.synced === 1 ? "" : "s"} from your Drive`);
+        load();
+      } else {
+        toast.info("Drive is in sync \u2014 nothing new to import.");
+      }
+    } catch (e) {
+      toast.error("Drive sync failed: " + (e?.response?.data?.error?.message || e.message));
+    }
+    setSyncing(false);
+  };
 
   // Revoke blob URL when viewer changes/closes to free memory
   useEffect(() => {
@@ -147,6 +173,18 @@ export default function Resources() {
           </p>
         </div>
         <div className="flex gap-2">
+          {driveStatus?.connected && (
+            <Button
+              variant="outline"
+              onClick={runSync}
+              disabled={syncing}
+              data-testid="drive-sync-btn"
+              title="Re-scan your GATEPREP folder on Drive and import any files that aren't tracked here yet"
+            >
+              <RefreshCw className={`w-4 h-4 mr-1 ${syncing ? "animate-spin" : ""}`} />
+              {syncing ? "Syncing\u2026" : "Sync from Drive"}
+            </Button>
+          )}
           <Dialog open={openUpload} onOpenChange={setOpenUpload}>
             <DialogTrigger asChild>
               <Button data-testid="upload-resource-btn">
@@ -245,6 +283,18 @@ export default function Resources() {
           {TYPES.map(t => <option key={t}>{t}</option>)}
         </select>
       </div>
+
+      {lastSync && (
+        <div className="text-xs mono text-muted-foreground border border-border rounded px-3 py-2">
+          Last Drive sync: <span className="text-foreground">{lastSync.synced}</span> restored,{" "}
+          <span className="text-foreground">{lastSync.skipped}</span> already tracked
+          {Array.isArray(lastSync.unknown_subjects) && lastSync.unknown_subjects.length > 0 && (
+            <div className="mt-1 text-amber-500">
+              Skipped folders (no matching subject): {lastSync.unknown_subjects.join(", ")}
+            </div>
+          )}
+        </div>
+      )}
 
       {items.length === 0 ? (
         <div className="text-sm text-muted-foreground border border-dashed border-border rounded-lg p-12 text-center flex flex-col items-center gap-2">

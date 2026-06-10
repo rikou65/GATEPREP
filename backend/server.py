@@ -96,8 +96,8 @@ async def get_current_user(request: Request) -> Dict[str, Any]:
     return user
 
 async def require_admin(user=Depends(get_current_user)):
-    if not user.get("is_admin"):
-        raise HTTPException(status_code=403, detail="Admin only")
+    # Admin role retired — every authenticated user can manage their own content.
+    # Kept as an identity passthrough so any legacy reference still works.
     return user
 
 # ---------- Auth routes ----------
@@ -154,6 +154,11 @@ async def auth_session(request: Request, response: Response):
         key="session_token", value=session_token, httponly=True,
         secure=True, samesite="none", path="/", max_age=7*24*3600,
     )
+    # Stamp any legacy unowned content to this (first) user. Idempotent — no-op once everything is owned.
+    try:
+        await _migrate_per_user_content()
+    except Exception as e:
+        logger.warning(f"per-user migration on login: {e}")
     return ok({"user": {k: v for k, v in user.items() if k != "_id"}})
 
 @api.get("/auth/me")
@@ -202,11 +207,15 @@ async def list_questions(
     topic_id: Optional[str] = None,
     difficulty: Optional[str] = None,
     question_type: Optional[str] = None,
+    attempted: Optional[str] = None,   # "true" | "false" | None
+    result: Optional[str] = None,      # "correct" | "incorrect" | None  (uses latest attempt)
+    flag: Optional[str] = None,        # "review" | "important" | None
     limit: int = Query(50, le=200),
     skip: int = 0,
     user=Depends(get_current_user),
 ):
-    q: Dict[str, Any] = {}
+    uid = user["user_id"]
+    q: Dict[str, Any] = {"user_id": uid}
     if subject_id:
         q["subject_id"] = subject_id
     if topic_id:
@@ -215,21 +224,70 @@ async def list_questions(
         q["difficulty"] = difficulty
     if question_type:
         q["question_type"] = question_type
+
+    # Latest attempt per question (used for attempted / result filters AND for the response shape)
+    latest_pipeline = [
+        {"$match": {"user_id": uid}},
+        {"$sort": {"attempted_at": -1}},
+        {"$group": {"_id": "$question_id", "is_correct": {"$first": "$is_correct"}}},
+    ]
+    latest_rows = await db.question_attempts.aggregate(latest_pipeline).to_list(50000)
+    attempted_qids = {r["_id"] for r in latest_rows}
+    correct_qids = {r["_id"] for r in latest_rows if r["is_correct"]}
+    incorrect_qids = attempted_qids - correct_qids
+
+    if attempted == "true":
+        if result == "correct":
+            q["question_id"] = {"$in": list(correct_qids)}
+        elif result == "incorrect":
+            q["question_id"] = {"$in": list(incorrect_qids)}
+        else:
+            q["question_id"] = {"$in": list(attempted_qids)}
+    elif attempted == "false":
+        q["question_id"] = {"$nin": list(attempted_qids)}
+
+    if flag in ("review", "important"):
+        flagged_ids = await db.question_flags.distinct(
+            "question_id", {"user_id": uid, "flag_type": flag}
+        )
+        if "question_id" in q and isinstance(q["question_id"], dict) and "$in" in q["question_id"]:
+            # Intersect with already-restricted ids
+            q["question_id"]["$in"] = list(set(q["question_id"]["$in"]) & set(flagged_ids))
+        elif "question_id" in q and isinstance(q["question_id"], dict) and "$nin" in q["question_id"]:
+            q["question_id"] = {"$in": list(set(flagged_ids) - set(q["question_id"]["$nin"]))}
+        else:
+            q["question_id"] = {"$in": flagged_ids}
+
     total = await db.questions.count_documents(q)
     docs = await db.questions.find(q, {"_id": 0}).skip(skip).limit(limit).to_list(limit)
-    # attach attempt summary per question for this user
+
+    # attempt summary per question for this user
     qids = [d["question_id"] for d in docs]
     attempts = await db.question_attempts.find(
-        {"user_id": user["user_id"], "question_id": {"$in": qids}}, {"_id": 0}
-    ).to_list(2000)
+        {"user_id": uid, "question_id": {"$in": qids}}, {"_id": 0}
+    ).to_list(20000)
     by_q: Dict[str, Dict[str, Any]] = {}
     for a in attempts:
         cur = by_q.setdefault(a["question_id"], {"count": 0, "correct": 0, "last_correct": None})
         cur["count"] += 1
         if a["is_correct"]:
             cur["correct"] += 1
+        # Note: attempts come in unspecified order from find(); use the sorted-by-time aggregate above for truth
         cur["last_correct"] = a["is_correct"]
-    # subject / topic name lookup (used as tags in the UI)
+    # Override last_correct with the latest-attempt aggregate (source of truth)
+    correctness_by_q = {r["_id"]: r["is_correct"] for r in latest_rows}
+    for qid in by_q:
+        if qid in correctness_by_q:
+            by_q[qid]["last_correct"] = correctness_by_q[qid]
+
+    # Flags per question for this user
+    flag_rows = await db.question_flags.find(
+        {"user_id": uid, "question_id": {"$in": qids}}, {"_id": 0, "question_id": 1, "flag_type": 1}
+    ).to_list(20000)
+    flags_by_q: Dict[str, List[str]] = {}
+    for fr in flag_rows:
+        flags_by_q.setdefault(fr["question_id"], []).append(fr["flag_type"])
+
     sub_ids = {d.get("subject_id") for d in docs if d.get("subject_id")}
     top_ids = {d.get("topic_id") for d in docs if d.get("topic_id")}
     subs = {s["subject_id"]: s["name"] async for s in db.subjects.find(
@@ -238,15 +296,22 @@ async def list_questions(
         {"topic_id": {"$in": list(top_ids)}}, {"_id": 0, "topic_id": 1, "name": 1})}
     for d in docs:
         d["user_progress"] = by_q.get(d["question_id"], {"count": 0, "correct": 0, "last_correct": None})
+        d["flags"] = flags_by_q.get(d["question_id"], [])
         d["subject_name"] = subs.get(d.get("subject_id"), "")
         d["topic_name"] = tops.get(d.get("topic_id"), "")
     return ok({"items": docs, "total": total})
 
 @api.get("/questions/{question_id}")
 async def get_question(question_id: str, user=Depends(get_current_user)):
-    q = await db.questions.find_one({"question_id": question_id}, {"_id": 0})
+    q = await db.questions.find_one(
+        {"question_id": question_id, "user_id": user["user_id"]}, {"_id": 0}
+    )
     if not q:
         return err("not_found", "Question not found", 404)
+    flags = await db.question_flags.find(
+        {"user_id": user["user_id"], "question_id": question_id}, {"_id": 0, "flag_type": 1}
+    ).to_list(10)
+    q["flags"] = [f["flag_type"] for f in flags]
     return ok(q)
 
 class AttemptIn(BaseModel):
@@ -267,7 +332,9 @@ def _is_correct(qtype: str, correct: Any, selected: Any) -> bool:
 
 @api.post("/questions/{question_id}/attempt")
 async def attempt_question(question_id: str, body: AttemptIn, user=Depends(get_current_user)):
-    q = await db.questions.find_one({"question_id": question_id}, {"_id": 0})
+    q = await db.questions.find_one(
+        {"question_id": question_id, "user_id": user["user_id"]}, {"_id": 0}
+    )
     if not q:
         return err("not_found", "Question not found", 404)
     correct = _is_correct(q["question_type"], q["correct_answer"], body.selected_answer)
@@ -316,22 +383,59 @@ async def save_question_notes(question_id: str, body: NotesIn, user=Depends(get_
 @api.get("/pyqs")
 async def list_pyqs(
     subject_id: Optional[str] = None, topic_id: Optional[str] = None,
-    year: Optional[int] = None, limit: int = Query(50, le=200), skip: int = 0,
+    year: Optional[int] = None,
+    attempted: Optional[str] = None,
+    result: Optional[str] = None,
+    flag: Optional[str] = None,
+    limit: int = Query(50, le=200), skip: int = 0,
     user=Depends(get_current_user),
 ):
-    q: Dict[str, Any] = {}
+    uid = user["user_id"]
+    q: Dict[str, Any] = {"user_id": uid}
     if subject_id:
         q["subject_id"] = subject_id
     if topic_id:
         q["topic_id"] = topic_id
     if year:
         q["year"] = year
+
+    latest_pipeline = [
+        {"$match": {"user_id": uid}},
+        {"$sort": {"attempted_at": -1}},
+        {"$group": {"_id": "$pyq_id", "is_correct": {"$first": "$is_correct"}}},
+    ]
+    latest_rows = await db.pyq_attempts.aggregate(latest_pipeline).to_list(50000)
+    attempted_pids = {r["_id"] for r in latest_rows}
+    correct_pids = {r["_id"] for r in latest_rows if r["is_correct"]}
+    incorrect_pids = attempted_pids - correct_pids
+
+    if attempted == "true":
+        if result == "correct":
+            q["pyq_id"] = {"$in": list(correct_pids)}
+        elif result == "incorrect":
+            q["pyq_id"] = {"$in": list(incorrect_pids)}
+        else:
+            q["pyq_id"] = {"$in": list(attempted_pids)}
+    elif attempted == "false":
+        q["pyq_id"] = {"$nin": list(attempted_pids)}
+
+    if flag in ("review", "important"):
+        flagged_ids = await db.pyq_flags.distinct(
+            "pyq_id", {"user_id": uid, "flag_type": flag}
+        )
+        if "pyq_id" in q and isinstance(q["pyq_id"], dict) and "$in" in q["pyq_id"]:
+            q["pyq_id"]["$in"] = list(set(q["pyq_id"]["$in"]) & set(flagged_ids))
+        elif "pyq_id" in q and isinstance(q["pyq_id"], dict) and "$nin" in q["pyq_id"]:
+            q["pyq_id"] = {"$in": list(set(flagged_ids) - set(q["pyq_id"]["$nin"]))}
+        else:
+            q["pyq_id"] = {"$in": flagged_ids}
+
     total = await db.pyqs.count_documents(q)
     docs = await db.pyqs.find(q, {"_id": 0}).skip(skip).limit(limit).to_list(limit)
     pids = [d["pyq_id"] for d in docs]
     attempts = await db.pyq_attempts.find(
-        {"user_id": user["user_id"], "pyq_id": {"$in": pids}}, {"_id": 0}
-    ).to_list(2000)
+        {"user_id": uid, "pyq_id": {"$in": pids}}, {"_id": 0}
+    ).to_list(20000)
     by_p: Dict[str, Dict[str, Any]] = {}
     for a in attempts:
         cur = by_p.setdefault(a["pyq_id"], {"count": 0, "correct": 0, "last_correct": None})
@@ -339,6 +443,18 @@ async def list_pyqs(
         if a["is_correct"]:
             cur["correct"] += 1
         cur["last_correct"] = a["is_correct"]
+    correctness_by_p = {r["_id"]: r["is_correct"] for r in latest_rows}
+    for pid in by_p:
+        if pid in correctness_by_p:
+            by_p[pid]["last_correct"] = correctness_by_p[pid]
+
+    flag_rows = await db.pyq_flags.find(
+        {"user_id": uid, "pyq_id": {"$in": pids}}, {"_id": 0, "pyq_id": 1, "flag_type": 1}
+    ).to_list(20000)
+    flags_by_p: Dict[str, List[str]] = {}
+    for fr in flag_rows:
+        flags_by_p.setdefault(fr["pyq_id"], []).append(fr["flag_type"])
+
     sub_ids = {d.get("subject_id") for d in docs if d.get("subject_id")}
     top_ids = {d.get("topic_id") for d in docs if d.get("topic_id")}
     subs = {s["subject_id"]: s["name"] async for s in db.subjects.find(
@@ -347,20 +463,29 @@ async def list_pyqs(
         {"topic_id": {"$in": list(top_ids)}}, {"_id": 0, "topic_id": 1, "name": 1})}
     for d in docs:
         d["user_progress"] = by_p.get(d["pyq_id"], {"count": 0, "correct": 0, "last_correct": None})
+        d["flags"] = flags_by_p.get(d["pyq_id"], [])
         d["subject_name"] = subs.get(d.get("subject_id"), "")
         d["topic_name"] = tops.get(d.get("topic_id"), "")
     return ok({"items": docs, "total": total})
 
 @api.get("/pyqs/{pyq_id}")
 async def get_pyq(pyq_id: str, user=Depends(get_current_user)):
-    q = await db.pyqs.find_one({"pyq_id": pyq_id}, {"_id": 0})
+    q = await db.pyqs.find_one(
+        {"pyq_id": pyq_id, "user_id": user["user_id"]}, {"_id": 0}
+    )
     if not q:
         return err("not_found", "PYQ not found", 404)
+    flags = await db.pyq_flags.find(
+        {"user_id": user["user_id"], "pyq_id": pyq_id}, {"_id": 0, "flag_type": 1}
+    ).to_list(10)
+    q["flags"] = [f["flag_type"] for f in flags]
     return ok(q)
 
 @api.post("/pyqs/{pyq_id}/attempt")
 async def attempt_pyq(pyq_id: str, body: AttemptIn, user=Depends(get_current_user)):
-    q = await db.pyqs.find_one({"pyq_id": pyq_id}, {"_id": 0})
+    q = await db.pyqs.find_one(
+        {"pyq_id": pyq_id, "user_id": user["user_id"]}, {"_id": 0}
+    )
     if not q:
         return err("not_found", "PYQ not found", 404)
     correct = _is_correct(q["question_type"], q["correct_answer"], body.selected_answer)
@@ -1226,7 +1351,7 @@ async def topic_analytics(topic_id: str, user=Depends(get_current_user)) -> Dict
     pa = await db.pyq_attempts.find({"user_id": uid}, {"_id": 0}).to_list(20000)
     return ok(await _topic_progress_row(t, uid, qa, pa))
 
-# ---------- Admin ----------
+# ---------- User-owned Question / PYQ CRUD (no admin role) ----------
 class QuestionIn(BaseModel):
     subject_id: str
     topic_id: str
@@ -1236,38 +1361,221 @@ class QuestionIn(BaseModel):
     correct_answer: Any
     solution: str
     difficulty: str = "Medium"
-    source: str = "Admin"
+    source: str = "User"
     year: Optional[int] = None
 
-@api.post("/admin/questions")
-async def admin_create_question(body: QuestionIn, user=Depends(require_admin)):
-    doc = {"question_id": new_id("q"), **body.model_dump(), "created_at": iso(now_utc())}
+
+@api.post("/questions")
+async def create_question(body: QuestionIn, user=Depends(get_current_user)):
+    doc = {
+        "question_id": new_id("q"),
+        "user_id": user["user_id"],
+        **body.model_dump(),
+        "created_at": iso(now_utc()),
+    }
     await db.questions.insert_one(dict(doc))
     doc.pop("_id", None)
     return ok(doc)
 
-@api.delete("/admin/questions/{question_id}")
-async def admin_delete_question(question_id: str, user=Depends(require_admin)):
-    r = await db.questions.delete_one({"question_id": question_id})
-    return ok({"deleted": r.deleted_count})
+
+class QuestionPatch(BaseModel):
+    subject_id: Optional[str] = None
+    topic_id: Optional[str] = None
+    question_type: Optional[str] = None
+    question_text: Optional[str] = None
+    options: Optional[List[str]] = None
+    correct_answer: Any = None
+    solution: Optional[str] = None
+    difficulty: Optional[str] = None
+    source: Optional[str] = None
+    year: Optional[int] = None
+
+
+@api.put("/questions/{question_id}")
+async def update_question(question_id: str, body: QuestionPatch, user=Depends(get_current_user)):
+    upd = {k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None or k == "correct_answer"}
+    if not upd:
+        return err("nothing_to_update", "No fields supplied", 400)
+    upd["updated_at"] = iso(now_utc())
+    r = await db.questions.update_one(
+        {"question_id": question_id, "user_id": user["user_id"]}, {"$set": upd}
+    )
+    if r.matched_count == 0:
+        return err("not_found", "Question not found", 404)
+    doc = await db.questions.find_one(
+        {"question_id": question_id, "user_id": user["user_id"]}, {"_id": 0}
+    )
+    return ok(doc)
+
+
+@api.delete("/questions/{question_id}")
+async def delete_question(question_id: str, user=Depends(get_current_user)):
+    r = await db.questions.delete_one(
+        {"question_id": question_id, "user_id": user["user_id"]}
+    )
+    if r.deleted_count == 0:
+        return err("not_found", "Question not found", 404)
+    # Clean up related per-user records
+    await db.question_attempts.delete_many({"user_id": user["user_id"], "question_id": question_id})
+    await db.question_notes.delete_many({"user_id": user["user_id"], "question_id": question_id})
+    await db.question_flags.delete_many({"user_id": user["user_id"], "question_id": question_id})
+    await db.mistakes.delete_many({"user_id": user["user_id"], "question_id": question_id})
+    return ok({"deleted": 1})
+
 
 class PYQIn(QuestionIn):
     year: int
 
-@api.post("/admin/pyqs")
-async def admin_create_pyq(body: PYQIn, user=Depends(require_admin)):
-    doc = {"pyq_id": new_id("pyq"), **body.model_dump(), "created_at": iso(now_utc())}
+
+@api.post("/pyqs")
+async def create_pyq(body: PYQIn, user=Depends(get_current_user)):
+    doc = {
+        "pyq_id": new_id("pyq"),
+        "user_id": user["user_id"],
+        **body.model_dump(),
+        "created_at": iso(now_utc()),
+    }
     await db.pyqs.insert_one(dict(doc))
     doc.pop("_id", None)
     return ok(doc)
 
+
+@api.put("/pyqs/{pyq_id}")
+async def update_pyq(pyq_id: str, body: QuestionPatch, user=Depends(get_current_user)):
+    upd = {k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None or k == "correct_answer"}
+    if not upd:
+        return err("nothing_to_update", "No fields supplied", 400)
+    upd["updated_at"] = iso(now_utc())
+    r = await db.pyqs.update_one(
+        {"pyq_id": pyq_id, "user_id": user["user_id"]}, {"$set": upd}
+    )
+    if r.matched_count == 0:
+        return err("not_found", "PYQ not found", 404)
+    doc = await db.pyqs.find_one(
+        {"pyq_id": pyq_id, "user_id": user["user_id"]}, {"_id": 0}
+    )
+    return ok(doc)
+
+
+@api.delete("/pyqs/{pyq_id}")
+async def delete_pyq(pyq_id: str, user=Depends(get_current_user)):
+    r = await db.pyqs.delete_one(
+        {"pyq_id": pyq_id, "user_id": user["user_id"]}
+    )
+    if r.deleted_count == 0:
+        return err("not_found", "PYQ not found", 404)
+    await db.pyq_attempts.delete_many({"user_id": user["user_id"], "pyq_id": pyq_id})
+    await db.pyq_flags.delete_many({"user_id": user["user_id"], "pyq_id": pyq_id})
+    return ok({"deleted": 1})
+
+
+# ---------- Flags: Marked for Review / Important ----------
+VALID_FLAG_TYPES = {"review", "important"}
+
+
+class FlagIn(BaseModel):
+    flag_type: str  # "review" | "important"
+
+
+@api.post("/questions/{question_id}/flag")
+async def flag_question(question_id: str, body: FlagIn, user=Depends(get_current_user)):
+    if body.flag_type not in VALID_FLAG_TYPES:
+        return err("invalid_flag", f"flag_type must be one of {sorted(VALID_FLAG_TYPES)}", 400)
+    # Ownership check (don't let someone flag a question that isn't theirs)
+    q = await db.questions.find_one(
+        {"question_id": question_id, "user_id": user["user_id"]}, {"_id": 0, "question_id": 1}
+    )
+    if not q:
+        return err("not_found", "Question not found", 404)
+    await db.question_flags.update_one(
+        {"user_id": user["user_id"], "question_id": question_id, "flag_type": body.flag_type},
+        {"$set": {"updated_at": iso(now_utc())},
+         "$setOnInsert": {
+            "user_id": user["user_id"], "question_id": question_id,
+            "flag_type": body.flag_type, "created_at": iso(now_utc()),
+         }},
+        upsert=True,
+    )
+    flags = await db.question_flags.find(
+        {"user_id": user["user_id"], "question_id": question_id}, {"_id": 0, "flag_type": 1}
+    ).to_list(10)
+    return ok({"flags": [f["flag_type"] for f in flags]})
+
+
+@api.delete("/questions/{question_id}/flag/{flag_type}")
+async def unflag_question(question_id: str, flag_type: str, user=Depends(get_current_user)):
+    if flag_type not in VALID_FLAG_TYPES:
+        return err("invalid_flag", f"flag_type must be one of {sorted(VALID_FLAG_TYPES)}", 400)
+    await db.question_flags.delete_one(
+        {"user_id": user["user_id"], "question_id": question_id, "flag_type": flag_type}
+    )
+    flags = await db.question_flags.find(
+        {"user_id": user["user_id"], "question_id": question_id}, {"_id": 0, "flag_type": 1}
+    ).to_list(10)
+    return ok({"flags": [f["flag_type"] for f in flags]})
+
+
+@api.post("/pyqs/{pyq_id}/flag")
+async def flag_pyq(pyq_id: str, body: FlagIn, user=Depends(get_current_user)):
+    if body.flag_type not in VALID_FLAG_TYPES:
+        return err("invalid_flag", f"flag_type must be one of {sorted(VALID_FLAG_TYPES)}", 400)
+    p = await db.pyqs.find_one(
+        {"pyq_id": pyq_id, "user_id": user["user_id"]}, {"_id": 0, "pyq_id": 1}
+    )
+    if not p:
+        return err("not_found", "PYQ not found", 404)
+    await db.pyq_flags.update_one(
+        {"user_id": user["user_id"], "pyq_id": pyq_id, "flag_type": body.flag_type},
+        {"$set": {"updated_at": iso(now_utc())},
+         "$setOnInsert": {
+            "user_id": user["user_id"], "pyq_id": pyq_id,
+            "flag_type": body.flag_type, "created_at": iso(now_utc()),
+         }},
+        upsert=True,
+    )
+    flags = await db.pyq_flags.find(
+        {"user_id": user["user_id"], "pyq_id": pyq_id}, {"_id": 0, "flag_type": 1}
+    ).to_list(10)
+    return ok({"flags": [f["flag_type"] for f in flags]})
+
+
+@api.delete("/pyqs/{pyq_id}/flag/{flag_type}")
+async def unflag_pyq(pyq_id: str, flag_type: str, user=Depends(get_current_user)):
+    if flag_type not in VALID_FLAG_TYPES:
+        return err("invalid_flag", f"flag_type must be one of {sorted(VALID_FLAG_TYPES)}", 400)
+    await db.pyq_flags.delete_one(
+        {"user_id": user["user_id"], "pyq_id": pyq_id, "flag_type": flag_type}
+    )
+    flags = await db.pyq_flags.find(
+        {"user_id": user["user_id"], "pyq_id": pyq_id}, {"_id": 0, "flag_type": 1}
+    ).to_list(10)
+    return ok({"flags": [f["flag_type"] for f in flags]})
+
+
+# ---------- (deprecated) admin endpoints kept as thin aliases for back-compat ----------
+@api.post("/admin/questions")
+async def admin_create_question(body: QuestionIn, user=Depends(get_current_user)):
+    return await create_question(body, user)
+
+
+@api.delete("/admin/questions/{question_id}")
+async def admin_delete_question(question_id: str, user=Depends(get_current_user)):
+    return await delete_question(question_id, user)
+
+
+@api.post("/admin/pyqs")
+async def admin_create_pyq(body: PYQIn, user=Depends(get_current_user)):
+    return await create_pyq(body, user)
+
+
 @api.delete("/admin/pyqs/{pyq_id}")
-async def admin_delete_pyq(pyq_id: str, user=Depends(require_admin)):
-    r = await db.pyqs.delete_one({"pyq_id": pyq_id})
-    return ok({"deleted": r.deleted_count})
+async def admin_delete_pyq(pyq_id: str, user=Depends(get_current_user)):
+    return await delete_pyq(pyq_id, user)
+
 
 @api.get("/admin/users")
-async def admin_users(user=Depends(require_admin)):
+async def admin_users(user=Depends(get_current_user)):
+    # Anyone authenticated can see the user list; admin gate retired.
     docs = await db.users.find({}, {"_id": 0}).to_list(10000)
     return ok(docs)
 
@@ -1486,8 +1794,38 @@ async def on_startup():
             await seed_data()
             logger.info("Seeded GATE syllabus")
         await _migrate_v2_split_subjects()
+        await _migrate_per_user_content()
+        await _ensure_flag_indexes()
     except Exception as e:
         logger.error(f"Startup error: {e}")
+
+
+async def _migrate_per_user_content() -> None:
+    """One-time migration: stamp any question / pyq without a user_id to the
+    first user in the system (so seed data stays usable in single-user dev mode).
+    On a fresh container with no users yet, this is a no-op."""
+    first_user = await db.users.find_one({}, {"_id": 0, "user_id": 1}, sort=[("created_at", 1)])
+    if not first_user:
+        return
+    uid = first_user["user_id"]
+    r1 = await db.questions.update_many({"user_id": {"$exists": False}}, {"$set": {"user_id": uid}})
+    r2 = await db.pyqs.update_many({"user_id": {"$exists": False}}, {"$set": {"user_id": uid}})
+    if r1.modified_count or r2.modified_count:
+        logger.info(f"Stamped {r1.modified_count} questions and {r2.modified_count} pyqs to first user {uid}")
+
+
+async def _ensure_flag_indexes() -> None:
+    try:
+        await db.question_flags.create_index(
+            [("user_id", 1), ("question_id", 1), ("flag_type", 1)], unique=True
+        )
+        await db.pyq_flags.create_index(
+            [("user_id", 1), ("pyq_id", 1), ("flag_type", 1)], unique=True
+        )
+        await db.questions.create_index([("user_id", 1), ("subject_id", 1)])
+        await db.pyqs.create_index([("user_id", 1), ("subject_id", 1)])
+    except Exception as e:
+        logger.warning(f"index creation: {e}")
 
 
 async def _migrate_v2_split_subjects() -> None:
