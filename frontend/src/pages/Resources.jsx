@@ -46,6 +46,14 @@ export default function Resources() {
     setViewer(null);
   };
 
+  // Close viewer on Esc
+  useEffect(() => {
+    if (!viewer) return;
+    const onKey = (e) => { if (e.key === "Escape") closeViewer(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [viewer]);
+
   const load = () => {
     const params = {};
     Object.entries(filter).forEach(([k, v]) => { if (v) params[k] = v; });
@@ -290,21 +298,21 @@ export default function Resources() {
 
       {viewer && createPortal(
         <div
-          className="fixed inset-0 z-[9999] bg-black/95 backdrop-blur-sm flex flex-col"
+          className="dark fixed top-0 right-0 bottom-0 left-0 lg:left-64 z-40 bg-[#0a0a0a] flex flex-col"
           data-testid="resource-viewer"
         >
-          <div className="flex items-center justify-between px-5 py-3 border-b border-border bg-card/90">
+          <div className="flex items-center justify-between px-5 py-2.5 border-b border-white/10 bg-[#161616] shrink-0">
             <div className="flex items-center gap-2 min-w-0">
-              <FileText className="w-4 h-4 shrink-0" />
-              <div className="text-sm font-medium truncate">{viewer.title}</div>
+              <FileText className="w-4 h-4 shrink-0 text-neutral-400" />
+              <div className="text-sm font-medium truncate text-neutral-100">{viewer.title}</div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1">
               {viewer.view_url && (
                 <a
                   href={viewer.view_url}
                   target="_blank"
                   rel="noreferrer"
-                  className="text-xs mono text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
+                  className="text-xs font-mono text-neutral-400 hover:text-white inline-flex items-center gap-1.5 px-2.5 h-8 rounded-md hover:bg-white/5 transition-colors"
                   data-testid="viewer-open-tab"
                 >
                   <Maximize2 className="w-3.5 h-3.5" /> open in new tab
@@ -312,19 +320,19 @@ export default function Resources() {
               )}
               <button
                 onClick={closeViewer}
-                className="p-1.5 rounded-md hover:bg-secondary text-muted-foreground hover:text-foreground"
+                className="h-8 w-8 inline-flex items-center justify-center rounded-md hover:bg-white/5 text-neutral-400 hover:text-white transition-colors"
                 data-testid="viewer-close-btn"
-                title="Close"
+                title="Close (Esc)"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
           </div>
-          <div className="flex-1 bg-black relative">
+          <div className="flex-1 bg-[#0a0a0a] relative min-h-0">
             {viewer.loading ? (
-              <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-muted-foreground">
-                <div className="w-8 h-8 border-2 border-foreground/30 border-t-foreground rounded-full animate-spin" />
-                <div className="text-xs mono">Streaming from your Drive…</div>
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-neutral-400">
+                <div className="w-8 h-8 border-2 border-white/20 border-t-white/80 rounded-full animate-spin" />
+                <div className="text-xs font-mono">Streaming from your Drive…</div>
               </div>
             ) : viewer.isPdf && viewer.blob ? (
               <PdfCanvasViewer blob={viewer.blob} />
@@ -332,7 +340,7 @@ export default function Resources() {
               <iframe
                 src={viewer.embed_url}
                 title={viewer.title}
-                className="w-full h-full border-0"
+                className="w-full h-full border-0 bg-white"
                 allow="autoplay"
               />
             )}
