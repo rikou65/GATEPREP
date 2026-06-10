@@ -113,8 +113,10 @@ async def auth_session(request: Request, response: Response):
             headers={"X-Session-ID": session_id}, timeout=15,
         )
         if r.status_code != 200:
+            logger.error(f"auth verify failed: status={r.status_code} body={r.text[:300]} sid_prefix={session_id[:10]}")
             return err("auth_failed", "Failed to verify session", 401)
         data = r.json()
+        logger.info(f"auth verify ok email={data.get('email')}")
     except Exception as e:
         logger.error(f"auth error: {e}")
         return err("auth_failed", "Auth provider unreachable", 502)
