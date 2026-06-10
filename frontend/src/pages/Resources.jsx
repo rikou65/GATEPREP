@@ -31,6 +31,7 @@ export default function Resources() {
   const [uploadFile, setUploadFile] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [viewer, setViewer] = useState(null);
+  const [viewerNotes, setViewerNotes] = useState({ content: "", important_pages: [] });
   const fileRef = useRef(null);
   const blobCache = useRef(new Map()); // resource_id -> Blob (cached for this session)
   const [syncing, setSyncing] = useState(false);
@@ -70,6 +71,7 @@ export default function Resources() {
   const closeViewer = () => {
     if (viewer?.isBlob && viewer.embed_url) URL.revokeObjectURL(viewer.embed_url);
     setViewer(null);
+    setViewerNotes({ content: "", important_pages: [] });
   };
 
   // Close viewer on Esc
@@ -127,38 +129,98 @@ export default function Resources() {
 
   const openResource = async (r) => {
     try {
+      // Fetch notes + important pages in parallel with the view url request
+      const notesPromise = api.get(`/resources/${r.resource_id}/notes`).then(
+        (resp) => resp.data?.data || { content: "", important_pages: [] },
+      ).catch(() => ({ content: "", important_pages: [] }));
+
       const res = await api.get(`/resources/${r.resource_id}/view`);
       const data = res.data?.data;
       if (!data?.embed_url && data?.kind !== "drive") { toast.error("No preview available"); return; }
+
+      // Resolve notes (don't block UI on it though — viewer can render while notes load)
+      notesPromise.then((n) => setViewerNotes({
+        content: n.content || "",
+        important_pages: Array.isArray(n.important_pages) ? n.important_pages : [],
+      }));
+
       if (data.kind === "drive") {
-        // Cached? Skip the network round-trip.
         const cached = blobCache.current.get(r.resource_id);
         if (cached) {
           const isPdf = (cached.type || "").includes("pdf") || r.title?.toLowerCase().endsWith(".pdf");
           if (isPdf) {
-            setViewer({ title: r.title, blob: cached, view_url: data.view_url, isPdf: true, loading: false });
+            setViewer({ resource_id: r.resource_id, title: r.title, blob: cached, view_url: data.view_url, isPdf: true, loading: false });
           } else {
             const blobUrl = URL.createObjectURL(cached);
-            setViewer({ title: r.title, embed_url: blobUrl, view_url: data.view_url, isBlob: true, loading: false });
+            setViewer({ resource_id: r.resource_id, title: r.title, embed_url: blobUrl, view_url: data.view_url, isBlob: true, loading: false });
           }
           return;
         }
-        setViewer({ title: r.title, blob: null, view_url: data.view_url, isPdf: true, loading: true });
+        setViewer({ resource_id: r.resource_id, title: r.title, blob: null, view_url: data.view_url, isPdf: true, loading: true });
         const blobRes = await api.get(`/resources/${r.resource_id}/stream`, { responseType: "blob" });
         blobCache.current.set(r.resource_id, blobRes.data);
         const isPdf = (blobRes.data?.type || "").includes("pdf") || r.title?.toLowerCase().endsWith(".pdf");
         if (isPdf) {
-          setViewer({ title: r.title, blob: blobRes.data, view_url: data.view_url, isPdf: true, loading: false });
+          setViewer({ resource_id: r.resource_id, title: r.title, blob: blobRes.data, view_url: data.view_url, isPdf: true, loading: false });
         } else {
           const blobUrl = URL.createObjectURL(blobRes.data);
-          setViewer({ title: r.title, embed_url: blobUrl, view_url: data.view_url, isBlob: true, loading: false });
+          setViewer({ resource_id: r.resource_id, title: r.title, embed_url: blobUrl, view_url: data.view_url, isBlob: true, loading: false });
         }
       } else {
-        setViewer({ title: r.title, embed_url: data.embed_url, view_url: data.view_url, isBlob: false, loading: false });
+        setViewer({ resource_id: r.resource_id, title: r.title, embed_url: data.embed_url, view_url: data.view_url, isBlob: false, loading: false });
       }
     } catch {
       toast.error("Could not open");
       setViewer(null);
+    }
+  };
+
+  // ---- Notes & important-page handlers (passed into PdfCanvasViewer) ----
+  const saveNotesContent = async (content) => {
+    if (!viewer?.resource_id) return;
+    try {
+      const resp = await api.post(`/resources/${viewer.resource_id}/notes`, { content });
+      const d = resp.data?.data;
+      if (d) setViewerNotes({
+        content: d.content || "",
+        important_pages: Array.isArray(d.important_pages) ? d.important_pages : [],
+      });
+    } catch {
+      toast.error("Couldn't save notes");
+    }
+  };
+
+  const togglePage = async (page) => {
+    if (!viewer?.resource_id) return;
+    // Optimistic update
+    const had = (viewerNotes.important_pages || []).some((p) => p.page === page);
+    const next = had
+      ? viewerNotes.important_pages.filter((p) => p.page !== page)
+      : [...viewerNotes.important_pages, { page, label: "" }].sort((a, b) => a.page - b.page);
+    setViewerNotes((v) => ({ ...v, important_pages: next }));
+    try {
+      const resp = await api.post(`/resources/${viewer.resource_id}/pages/toggle`, { page });
+      const pages = resp.data?.data?.important_pages;
+      if (Array.isArray(pages)) setViewerNotes((v) => ({ ...v, important_pages: pages }));
+    } catch {
+      toast.error("Couldn't update bookmark");
+      // Revert on failure
+      setViewerNotes((v) => ({ ...v, important_pages: viewerNotes.important_pages }));
+    }
+  };
+
+  const updatePageLabel = async (page, label) => {
+    if (!viewer?.resource_id) return;
+    setViewerNotes((v) => ({
+      ...v,
+      important_pages: v.important_pages.map((p) => (p.page === page ? { ...p, label } : p)),
+    }));
+    try {
+      const resp = await api.post(`/resources/${viewer.resource_id}/pages/label`, { page, label });
+      const pages = resp.data?.data?.important_pages;
+      if (Array.isArray(pages)) setViewerNotes((v) => ({ ...v, important_pages: pages }));
+    } catch {
+      toast.error("Couldn't save label");
     }
   };
 
@@ -385,7 +447,14 @@ export default function Resources() {
                 <div className="text-xs font-mono">Streaming from your Drive…</div>
               </div>
             ) : viewer.isPdf && viewer.blob ? (
-              <PdfCanvasViewer blob={viewer.blob} />
+              <PdfCanvasViewer
+                blob={viewer.blob}
+                notes={viewerNotes.content}
+                importantPages={viewerNotes.important_pages}
+                onNotesChange={saveNotesContent}
+                onTogglePage={togglePage}
+                onUpdateLabel={updatePageLabel}
+              />
             ) : (
               <iframe
                 src={viewer.embed_url}

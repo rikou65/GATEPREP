@@ -788,14 +788,45 @@ async def delete_resource(resource_id: str, user=Depends(get_current_user)):
 
 
 # ---------- Resource Study Notes + Important Pages ----------
+def _normalize_pages(raw) -> List[Dict[str, Any]]:
+    """Coerce a list of ints or dicts into [{page:int, label:str}], sorted by page, deduped."""
+    seen: Dict[int, str] = {}
+    for item in raw or []:
+        try:
+            if isinstance(item, dict):
+                p = int(item.get("page", 0))
+                lbl = str(item.get("label", "") or "")
+            else:
+                p = int(item)
+                lbl = ""
+        except (ValueError, TypeError):
+            continue
+        if p <= 0:
+            continue
+        # Last wins on duplicate page numbers, preferring non-empty label
+        if p in seen and not lbl:
+            continue
+        seen[p] = lbl
+    return [{"page": p, "label": seen[p]} for p in sorted(seen.keys())]
+
+
+def _resource_notes_view(doc: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    if not doc:
+        return {"content": "", "important_pages": []}
+    return {
+        "content": doc.get("content", "") or "",
+        "important_pages": _normalize_pages(doc.get("important_pages")),
+        "updated_at": doc.get("updated_at"),
+    }
+
+
 class ResourceNotesIn(BaseModel):
     content: Optional[str] = None
-    important_pages: Optional[List[int]] = None
+    important_pages: Optional[List[Any]] = None  # list of ints OR list of {page,label}
 
 
 @api.get("/resources/{resource_id}/notes")
 async def get_resource_notes(resource_id: str, user=Depends(get_current_user)):
-    # Ownership
     res = await db.resources.find_one(
         {"resource_id": resource_id, "user_id": user["user_id"]}, {"_id": 0, "resource_id": 1}
     )
@@ -805,7 +836,7 @@ async def get_resource_notes(resource_id: str, user=Depends(get_current_user)):
         {"resource_id": resource_id, "user_id": user["user_id"]},
         {"_id": 0},
     )
-    return ok(doc or {"content": "", "important_pages": []})
+    return ok(_resource_notes_view(doc))
 
 
 @api.post("/resources/{resource_id}/notes")
@@ -819,9 +850,7 @@ async def save_resource_notes(resource_id: str, body: ResourceNotesIn, user=Depe
     if body.content is not None:
         set_doc["content"] = body.content
     if body.important_pages is not None:
-        # Normalize: dedupe + sort + drop non-positive ints
-        pages = sorted({int(p) for p in body.important_pages if int(p) > 0})
-        set_doc["important_pages"] = pages
+        set_doc["important_pages"] = _normalize_pages(body.important_pages)
     await db.resource_notes.update_one(
         {"resource_id": resource_id, "user_id": user["user_id"]},
         {"$set": set_doc,
@@ -834,11 +863,12 @@ async def save_resource_notes(resource_id: str, body: ResourceNotesIn, user=Depe
     doc = await db.resource_notes.find_one(
         {"resource_id": resource_id, "user_id": user["user_id"]}, {"_id": 0}
     )
-    return ok(doc)
+    return ok(_resource_notes_view(doc))
 
 
 class TogglePageIn(BaseModel):
     page: int
+    label: Optional[str] = ""
 
 
 @api.post("/resources/{resource_id}/pages/toggle")
@@ -855,14 +885,14 @@ async def toggle_important_page(resource_id: str, body: TogglePageIn, user=Depen
         {"resource_id": resource_id, "user_id": user["user_id"]},
         {"_id": 0, "important_pages": 1},
     ) or {}
-    pages = set(int(p) for p in existing.get("important_pages", []))
-    if body.page in pages:
-        pages.discard(body.page)
+    current = {p["page"]: p["label"] for p in _normalize_pages(existing.get("important_pages"))}
+    if body.page in current:
+        current.pop(body.page, None)
         action = "removed"
     else:
-        pages.add(body.page)
+        current[body.page] = (body.label or "")[:200]
         action = "added"
-    new_pages = sorted(pages)
+    new_pages = [{"page": p, "label": current[p]} for p in sorted(current.keys())]
     await db.resource_notes.update_one(
         {"resource_id": resource_id, "user_id": user["user_id"]},
         {"$set": {"important_pages": new_pages, "updated_at": iso(now_utc())},
@@ -873,6 +903,37 @@ async def toggle_important_page(resource_id: str, body: TogglePageIn, user=Depen
         upsert=True,
     )
     return ok({"important_pages": new_pages, "action": action, "page": body.page})
+
+
+class PageLabelIn(BaseModel):
+    page: int
+    label: str = ""
+
+
+@api.post("/resources/{resource_id}/pages/label")
+async def set_page_label(resource_id: str, body: PageLabelIn, user=Depends(get_current_user)):
+    """Update the label for an existing important page. No-op if page not flagged."""
+    if body.page <= 0:
+        return err("bad_page", "page must be a positive integer", 400)
+    res = await db.resources.find_one(
+        {"resource_id": resource_id, "user_id": user["user_id"]}, {"_id": 0, "resource_id": 1}
+    )
+    if not res:
+        return err("not_found", "Resource not found", 404)
+    existing = await db.resource_notes.find_one(
+        {"resource_id": resource_id, "user_id": user["user_id"]},
+        {"_id": 0, "important_pages": 1},
+    ) or {}
+    current = {p["page"]: p["label"] for p in _normalize_pages(existing.get("important_pages"))}
+    if body.page not in current:
+        return err("not_flagged", "Page is not flagged as important", 400)
+    current[body.page] = (body.label or "")[:200]
+    new_pages = [{"page": p, "label": current[p]} for p in sorted(current.keys())]
+    await db.resource_notes.update_one(
+        {"resource_id": resource_id, "user_id": user["user_id"]},
+        {"$set": {"important_pages": new_pages, "updated_at": iso(now_utc())}},
+    )
+    return ok({"important_pages": new_pages, "page": body.page, "label": current[body.page]})
 
 
 # ---------- Google Drive Integration ----------
@@ -1863,6 +1924,10 @@ async def seed_data() -> Dict[str, Any]:
 @api.get("/")
 async def root():
     return {"service": "gate-study-os", "version": "1.0"}
+
+@api.get("/health")
+async def health():
+    return {"status": "ok", "ts": iso(now_utc())}
 
 app.include_router(api)
 
