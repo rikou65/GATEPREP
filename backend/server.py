@@ -744,6 +744,106 @@ def _ensure_resource_folder(service, resource_type: str, subject_name: str) -> s
     return subject_id
 
 
+def _list_children(service, parent_id: str, mime_type: Optional[str] = None) -> List[Dict[str, Any]]:
+    """List children of a Drive folder. If mime_type given, filter by it; if None, exclude folders."""
+    q_parts = [f"'{parent_id}' in parents", "trashed=false"]
+    if mime_type:
+        q_parts.append(f"mimeType='{mime_type}'")
+    else:
+        q_parts.append("mimeType!='application/vnd.google-apps.folder'")
+    out: List[Dict[str, Any]] = []
+    page_token: Optional[str] = None
+    while True:
+        kwargs = {
+            "q": " and ".join(q_parts),
+            "fields": "nextPageToken, files(id,name,size,mimeType,webViewLink,createdTime,modifiedTime)",
+            "pageSize": 200,
+            "spaces": "drive",
+        }
+        if page_token:
+            kwargs["pageToken"] = page_token
+        res = service.files().list(**kwargs).execute()
+        out.extend(res.get("files", []))
+        page_token = res.get("nextPageToken")
+        if not page_token:
+            break
+    return out
+
+
+async def _sync_drive_to_resources(user_id: str) -> Dict[str, Any]:
+    """Walk the user's GATEPREP/{Type}/{Subject}/ folders in Drive and ensure every
+    file there has a row in our `resources` collection. Idempotent — files already
+    tracked (by drive_file_id) are skipped."""
+    service = await _build_drive_service(user_id)
+    if not service:
+        return {"synced": 0, "skipped": 0, "error": "drive_not_connected"}
+
+    # Map subject_name → subject_id once (case-insensitive lookup)
+    subj_docs = await db.subjects.find({}, {"_id": 0, "subject_id": 1, "name": 1}).to_list(100)
+    subj_by_name = {s["name"].lower(): s["subject_id"] for s in subj_docs}
+
+    # Existing drive_file_ids we already track for this user
+    existing = await db.resources.find(
+        {"user_id": user_id, "drive_file_id": {"$exists": True, "$ne": None}},
+        {"_id": 0, "drive_file_id": 1},
+    ).to_list(10000)
+    existing_ids = {r["drive_file_id"] for r in existing if r.get("drive_file_id")}
+
+    folder_mime = "application/vnd.google-apps.folder"
+    root_id = _find_folder(service, DRIVE_ROOT_NAME, None)
+    if not root_id:
+        return {"synced": 0, "skipped": 0, "error": "no_gateprep_folder"}
+
+    synced = 0
+    skipped = 0
+    unknown_subjects: List[str] = []
+
+    # Walk type folders (Books, Notes, ...). Accept anything present — not just our canonical list.
+    type_folders = _list_children(service, root_id, mime_type=folder_mime)
+    for type_folder in type_folders:
+        resource_type = type_folder["name"]
+        # Walk subject folders under each type
+        subject_folders = _list_children(service, type_folder["id"], mime_type=folder_mime)
+        for subj_folder in subject_folders:
+            subj_name = subj_folder["name"]
+            subject_id = subj_by_name.get(subj_name.lower())
+            if not subject_id:
+                # Unknown subject folder — skip but record
+                if subj_name not in unknown_subjects:
+                    unknown_subjects.append(subj_name)
+                continue
+            # List files in subject folder
+            files = _list_children(service, subj_folder["id"])
+            for f in files:
+                if f["id"] in existing_ids:
+                    skipped += 1
+                    continue
+                doc = {
+                    "resource_id": new_id("res"),
+                    "user_id": user_id,
+                    "subject_id": subject_id,
+                    "resource_type": resource_type,
+                    "title": f.get("name", "Untitled"),
+                    "filename": f.get("name", ""),
+                    "mime_type": f.get("mimeType", ""),
+                    "file_size": int(f.get("size", 0) or 0),
+                    "drive_file_id": f["id"],
+                    "external_url": f.get("webViewLink", ""),
+                    "source": "drive",
+                    "created_at": f.get("createdTime") or iso(now_utc()),
+                    "synced_at": iso(now_utc()),
+                }
+                await db.resources.insert_one(dict(doc))
+                existing_ids.add(f["id"])
+                synced += 1
+
+    return {
+        "synced": synced,
+        "skipped": skipped,
+        "unknown_subjects": unknown_subjects,
+    }
+
+
 @api.get("/drive/connect")
 async def drive_connect(user=Depends(get_current_user)):
     if not GOOGLE_DRIVE_CLIENT_ID:
@@ -801,6 +901,13 @@ async def drive_callback(code: str = Query(...), state: str = Query(...)):
             }, "$setOnInsert": {"connected_at": iso(now_utc())}},
             upsert=True,
         )
+        # Best-effort: re-sync existing GATEPREP/ files so prior uploads
+        # reappear even when this container has a fresh empty Mongo.
+        try:
+            sync_result = await _sync_drive_to_resources(state)
+            logger.info(f"Drive auto-sync after connect for {state}: {sync_result}")
+        except Exception as se:
+            logger.warning(f"Drive auto-sync failed (non-fatal) for {state}: {se}")
         frontend = os.environ.get("FRONTEND_URL") or GOOGLE_DRIVE_REDIRECT_URI.split("/api/")[0]
         return RedirectResponse(url=f"{frontend}/settings?drive=connected")
     except Exception as e:
@@ -819,6 +926,19 @@ async def drive_status(user=Depends(get_current_user)):
         "drive_email": doc.get("drive_email", ""),
         "connected_at": doc.get("connected_at"),
     })
+
+
+@api.post("/drive/sync")
+async def drive_sync(user=Depends(get_current_user)):
+    """Scan the user's GATEPREP/ folder on Drive and ensure every existing file
+    is mirrored as a row in our `resources` collection. Useful after re-connecting
+    Drive in a fresh container — your old uploads reappear."""
+    try:
+        result = await _sync_drive_to_resources(user["user_id"])
+        return ok(result)
+    except Exception as e:
+        logger.error(f"drive sync failed: {e}")
+        return err("sync_failed", str(e), 500)
 
 
 @api.post("/drive/disconnect")
