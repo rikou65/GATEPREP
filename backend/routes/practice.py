@@ -187,7 +187,7 @@ async def list_questions(
             "user_progress": {
                 "count": {"$ifNull": ["$stats.count", 0]},
                 "correct": {"$ifNull": ["$stats.correct", 0]},
-                "last_correct": "$last_attempt.is_correct"
+                "last_correct": {"$ifNull": ["$last_attempt.is_correct", None]}
             }
         }}
     ]
@@ -417,7 +417,7 @@ async def list_pyqs(
             "user_progress": {
                 "count": {"$ifNull": ["$stats.count", 0]},
                 "correct": {"$ifNull": ["$stats.correct", 0]},
-                "last_correct": "$last_attempt.is_correct"
+                "last_correct": {"$ifNull": ["$last_attempt.is_correct", None]}
             }
         }}
     ]
