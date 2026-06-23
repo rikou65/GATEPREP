@@ -73,4 +73,5 @@ jobs:
         working-directory: frontend
         env:
           REACT_APP_BACKEND_URL: http://localhost:8001
+          CI: false
         run: npm run build

@@ -22,9 +22,10 @@ load_dotenv(ROOT_DIR / ".env")
 settings = Settings(_env_file=str(ROOT_DIR / ".env"))
 
 mongo_url = settings.MONGO_URL
+use_tls = "mongodb+srv://" in mongo_url or "replicaSet" in mongo_url or "ssl=true" in mongo_url.lower()
 client = AsyncIOMotorClient(
     mongo_url, 
-    tls=True, 
+    tls=use_tls, 
     tlsAllowInvalidCertificates=True, 
     serverSelectionTimeoutMS=5000,
     connectTimeoutMS=5000
