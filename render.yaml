@@ -26,8 +26,8 @@ services:
         sync: false
       - key: FRONTEND_URL
         sync: false
-      - key: EMERGENT_OAUTH_URL
-        value: https://auth.emergentagent.com
+      - key: AUTH_PROVIDER_URL
+        value: https://auth.example.com
       - key: ADMIN_EMAILS
         sync: false
       - key: YOUTUBE_API_KEY

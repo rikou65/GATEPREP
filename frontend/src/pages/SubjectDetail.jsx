@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { Link, useParams } from "react-router-dom";
 import { BookCheck, History, FileText, Sparkles, ArrowUpRight } from "lucide-react";
+import Layout from "@/components/Layout";
 
 export default function SubjectDetail() {
   const { id } = useParams();
@@ -13,7 +14,11 @@ export default function SubjectDetail() {
     api.get(`/analytics/subject/${id}`).then(r => setRows(r.data?.data || []));
   }, [id]);
 
-  if (!subject) return <div className="text-sm text-muted-foreground">Loading…</div>;
+  if (!subject) return (
+    <Layout title="Subject Detail">
+      <div className="text-sm text-muted-foreground">Loading…</div>
+    </Layout>
+  );
 
   const qbTotal = rows.reduce((a, r) => a + r.qb.total, 0);
   const qbSolved = rows.reduce((a, r) => a + r.qb.solved, 0);
@@ -21,38 +26,40 @@ export default function SubjectDetail() {
   const pyqSolved = rows.reduce((a, r) => a + r.pyq.solved, 0);
 
   return (
-    <div className="space-y-8">
-      <div>
-        <Link to="/subjects" className="text-xs mono text-muted-foreground hover:text-foreground">← Subjects</Link>
-        <h1 className="text-3xl sm:text-4xl font-bold tracking-tight mt-2">{subject.name}</h1>
-        <p className="text-sm text-muted-foreground mt-1">{rows.length} topics · {qbTotal} questions · {pyqTotal} PYQs</p>
-      </div>
-
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <SummaryCard icon={BookCheck} label="QBank Solved" value={`${qbSolved}/${qbTotal}`} />
-        <SummaryCard icon={History} label="PYQ Solved" value={`${pyqSolved}/${pyqTotal}`} />
-        <Link to={`/questions?subject_id=${id}`} className="border border-border rounded-lg p-5 hover:border-foreground/40 transition-colors group">
-          <FileText className="w-4 h-4 text-muted-foreground mb-3" strokeWidth={1.5} />
-          <div className="text-xs uppercase tracking-[0.15em] text-muted-foreground">Open Question Bank</div>
-          <div className="text-base font-medium mt-1 inline-flex items-center gap-1 group-hover:translate-x-0.5 transition-transform">Practice <ArrowUpRight className="w-4 h-4" /></div>
-        </Link>
-        <Link to={`/pyqs?subject_id=${id}`} className="border border-border rounded-lg p-5 hover:border-foreground/40 transition-colors group">
-          <History className="w-4 h-4 text-muted-foreground mb-3" strokeWidth={1.5} />
-          <div className="text-xs uppercase tracking-[0.15em] text-muted-foreground">Open PYQs</div>
-          <div className="text-base font-medium mt-1 inline-flex items-center gap-1 group-hover:translate-x-0.5 transition-transform">Solve <ArrowUpRight className="w-4 h-4" /></div>
-        </Link>
-      </div>
-
-      <div>
-        <div className="flex items-baseline justify-between mb-3">
-          <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Topics</div>
-          <div className="text-[10px] mono text-muted-foreground/70">click a topic to open it</div>
+    <Layout title="Subject Detail">
+      <div className="space-y-8">
+        <div>
+          <Link to="/subjects" className="text-xs mono text-muted-foreground hover:text-foreground">← Subjects</Link>
+          <h1 className="text-3xl sm:text-4xl font-bold tracking-tight mt-2">{subject.name}</h1>
+          <p className="text-sm text-muted-foreground mt-1">{rows.length} topics · {qbTotal} questions · {pyqTotal} PYQs</p>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {rows.map(r => <TopicCard key={r.topic.topic_id} row={r} />)}
+
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <SummaryCard icon={BookCheck} label="QBank Solved" value={`${qbSolved}/${qbTotal}`} />
+          <SummaryCard icon={History} label="PYQ Solved" value={`${pyqSolved}/${pyqTotal}`} />
+          <Link to={`/questions?subject_id=${id}`} className="border border-border rounded-lg p-5 hover:border-foreground/40 transition-colors group">
+            <FileText className="w-4 h-4 text-muted-foreground mb-3" strokeWidth={1.5} />
+            <div className="text-xs uppercase tracking-[0.15em] text-muted-foreground">Open Question Bank</div>
+            <div className="text-base font-medium mt-1 inline-flex items-center gap-1 group-hover:translate-x-0.5 transition-transform">Practice <ArrowUpRight className="w-4 h-4" /></div>
+          </Link>
+          <Link to={`/pyqs?subject_id=${id}`} className="border border-border rounded-lg p-5 hover:border-foreground/40 transition-colors group">
+            <History className="w-4 h-4 text-muted-foreground mb-3" strokeWidth={1.5} />
+            <div className="text-xs uppercase tracking-[0.15em] text-muted-foreground">Open PYQs</div>
+            <div className="text-base font-medium mt-1 inline-flex items-center gap-1 group-hover:translate-x-0.5 transition-transform">Solve <ArrowUpRight className="w-4 h-4" /></div>
+          </Link>
+        </div>
+
+        <div>
+          <div className="flex items-baseline justify-between mb-3">
+            <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Topics</div>
+            <div className="text-[10px] mono text-muted-foreground/70">click a topic to open it</div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {rows.map(r => <TopicCard key={r.topic.topic_id} row={r} />)}
+          </div>
         </div>
       </div>
-    </div>
+    </Layout>
   );
 }
 

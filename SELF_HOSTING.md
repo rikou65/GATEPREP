@@ -1,6 +1,6 @@
 # Self-Hosting GATE Study OS for free (or near-free)
 
-This guide gets your personal GATE Study OS running on a **free-tier stack** with **persistent data** that survives restarts — solving the ephemeral-DB problem you hit on the Emergent preview container.
+This guide gets your personal GATE Study OS running on a **free-tier stack** with **persistent data** that survives restarts — solving the ephemeral-DB problem you hit on the development environment.
 
 **Total cost**: $0/month for typical personal use (within free-tier limits).
 **Total time**: ~30 minutes if you already have Google accounts ready.
@@ -20,7 +20,7 @@ This guide gets your personal GATE Study OS running on a **free-tier stack** wit
 
 ## Step 0 — Push your code to GitHub
 
-Already done from your Emergent project ✅. If not: in the Emergent chat input, click **"Save to Github"**.
+Already done from your project ✅. If not: in the chat input, click **"Save to Github"**.
 
 Make sure the repo contains the new config files we just generated:
 - `render.yaml` (root) — Render Infrastructure-as-Code
@@ -66,7 +66,7 @@ Make sure the repo contains the new config files we just generated:
    | `GOOGLE_DRIVE_CLIENT_SECRET` | same |
    | `GOOGLE_DRIVE_REDIRECT_URI` | `https://<your-render-host>/api/drive/callback`  ← fill in after deploy gives you the URL |
    | `FRONTEND_URL` | `https://<your-vercel-host>`  ← fill in after Step 3 |
-   | `EMERGENT_OAUTH_URL` | `https://auth.emergentagent.com` |
+   | `AUTH_PROVIDER_URL` | `PLACEHOLDER_AUTH_PROVIDER_URL` |
 
 5. Hit **Save**, Render redeploys. Wait for green **Live** badge. Your URL is now `https://gate-os-backend-xxxx.onrender.com`.
 6. **Update Google Cloud Console**:
@@ -74,7 +74,7 @@ Make sure the repo contains the new config files we just generated:
      ```
      https://gate-os-backend-xxxx.onrender.com/api/drive/callback
      ```
-   - (Keep the Emergent preview URL too if you still use that.)
+   - (Keep the previous development URL too if you still use that.)
 7. **Update `GOOGLE_DRIVE_REDIRECT_URI` on Render** to that same URL, save & redeploy.
 
 > **First-request cold start**: Render's free tier sleeps after 15 min of no traffic. First request after sleep takes ~30s to wake. Subsequent requests are fast. To avoid: upgrade to Render Starter ($7/mo) or hit `/api/health` every 10 min from a free cron service (e.g. cron-job.org).
@@ -93,7 +93,7 @@ Make sure the repo contains the new config files we just generated:
 
 4. **Deploy**. ~2 minutes later you have `https://gate-study-os-yourname.vercel.app`.
 5. **Go back to Render** → update the `FRONTEND_URL` env var to this Vercel URL → redeploy.
-6. **Google Cloud Console** → Authorized redirect URIs on the Emergent-managed Google login client (if separate) → add the Vercel host.
+6. **Google Cloud Console** → Authorized redirect URIs on the Google OAuth login client (if separate) → add the Vercel host.
 
 ---
 

@@ -19,16 +19,14 @@ import PlaylistDetail from "@/pages/PlaylistDetail";
 import Resources from "@/pages/Resources";
 import Analytics from "@/pages/Analytics";
 import Settings from "@/pages/Settings";
+import StagingQueue from "@/pages/StagingQueue";
+import ImportPDF from "@/pages/ImportPDF";
 
 function AppRouter() {
-  const location = useLocation();
-  // Synchronously detect OAuth return - prevents race conditions
-  if (location.hash?.includes("session_id=")) {
-    return <AuthCallback />;
-  }
   return (
     <Routes>
       <Route path="/" element={<Login />} />
+      <Route path="/auth/callback" element={<AuthCallback />} />
       <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/subjects" element={<ProtectedRoute><Subjects /></ProtectedRoute>} />
       <Route path="/subjects/:id" element={<ProtectedRoute><SubjectDetail /></ProtectedRoute>} />
@@ -41,6 +39,8 @@ function AppRouter() {
       <Route path="/resources" element={<ProtectedRoute><Resources /></ProtectedRoute>} />
       <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
       <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+      <Route path="/admin/staging" element={<ProtectedRoute><StagingQueue /></ProtectedRoute>} />
+      <Route path="/admin/import" element={<ProtectedRoute><ImportPDF /></ProtectedRoute>} />
     </Routes>
   );
 }

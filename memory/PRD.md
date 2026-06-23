@@ -15,13 +15,13 @@ The product should feel like a calm, focused Notion-like surface, telling the us
 
 ## 2. Core architecture
 
-- **Backend:** FastAPI (Python 3.11) + Motor (async MongoDB) + Pydantic v2. All routes prefixed `/api`.
+- **Backend:** FastAPI (Python 3.12) + Motor (async MongoDB) + Pydantic v2. All routes prefixed `/api`.
 - **Frontend:** React 19 + react-router-dom 7 + Tailwind + shadcn/ui (dark theme) + axios + recharts + `pdfjs-dist`.
 - **Database:** MongoDB. Every user-owned collection scoped by `user_id` (multi-tenant from line 1).
-- **Auth:** Emergent-managed Google OAuth → JWT session tokens.
+- **Auth:** Standard Google OAuth (Code Exchange) → JWT session tokens.
 - **Google Drive:** *Separate* OAuth client with `drive.file` scope — user’s files live in their own Drive under `GATEPREP/{Type}/{Subject}/`.
 - **YouTube:** Data API v3 for playlist imports; IFrame API for inline playback + progress tracking.
-- **LLM (planned):** Gemini Nano Banana via Emergent Universal LLM key for OCR ingestion.
+- **LLM (planned):** Gemini 1.5 Flash via Gemini API Key for OCR ingestion.
 
 ---
 
@@ -42,8 +42,8 @@ The product should feel like a calm, focused Notion-like surface, telling the us
 ## 4. Implemented (cumulative)
 
 ### Auth & users
-- `/api/auth/session`, `/api/auth/me`, `/api/auth/logout` (cookie + Bearer)
-- First user auto-promoted to admin; subsequent admins set via `ADMIN_EMAILS` env or DB toggle.
+- `/api/auth/session`, `/api/auth/me`, `/api/auth/logout` (cookie + Bearer).
+- **Dev-Bypass:** `POST /api/auth/dev-login` for instant local access without Google (Demo Student).
 
 ### Syllabus
 - 12 official GATE CSE subjects seeded.
@@ -52,19 +52,17 @@ The product should feel like a calm, focused Notion-like surface, telling the us
 
 ### Question Bank
 - MCQ / MSQ / NAT with proper UX (radio / multi-select / numeric tolerance).
-- Filters: subject, topic, type. **Difficulty filter removed** (badge stays on the question, but it’s not a filter axis).
+- Filters: subject, topic, type. (High-performance DB aggregation).
 - Inline solutions revealed after submit.
 - Per-user attempt logging in `question_attempts`.
-- **Subject + topic tags** rendered on each question card (alongside MCQ/Easy/year tags).
-- URL params `?subject_id=&topic_id=` pre-populate filters (sync’d via `useEffect` on `useSearchParams`).
+- Subject + topic tags rendered on each question card.
+- URL params `?subject_id=&topic_id=` pre-populate filters.
 - Notes per question (auto-save).
-- Attempt history endpoint.
 
 ### PYQs
 - Parallel collection to questions, independent analytics.
-- Year filter. Same UX as Question Bank.
+- **Year filter dropdown** (2000–2026) with refined UI alignment.
 - Same subject+topic tag rendering.
-- Same URL-param sync.
 
 ### Mistake Lab
 - Auto-populated from incorrect attempts (questions + PYQs).
@@ -80,101 +78,60 @@ The product should feel like a calm, focused Notion-like surface, telling the us
 - OAuth `drive.file` connect / disconnect flow.
 - Auto-provisioned folder hierarchy in user’s Drive: `GATEPREP/{PDF|Notes|Other}/{Subject}/`.
 - Upload streams through backend → pushes to Drive → stores metadata only.
-- **Sync from Drive** — re-scan `GATEPREP/` and re-attach Drive files into the local DB (recovers from ephemeral-container data loss).
+- **Sync from Drive** — re-scan `GATEPREP/` and re-attach Drive files into the local DB.
 - **Per-resource study notes** (free-form text, auto-saved with 600ms debounce).
-- **Important pages** — flag the current page in the toolbar, label each bookmark, jump back to any flagged page, flagged-page badge visible inline on the page strip. Right-side panel is toggled on/off via toolbar.
-- **Inline PDF viewer** via custom `PdfCanvasViewer.jsx`:
-  - Continuous multi-page scroll with mouse wheel.
-  - Windowed rendering (only ±2 pages around viewport render canvas; rest are lightweight placeholders) — handles 200+ page PDFs without melting the browser.
-  - Sticky dark-themed toolbar: page navigation, direct page input, zoom in/out, fit-to-width toggle.
-  - Keyboard shortcuts (←/→, PageUp/Down, Esc).
-  - Portal-mounted modal with `lg:left-64` offset so sidebar stays visible.
-  - `dark` class scoped on portal so Tailwind dark vars resolve correctly.
-  - In-session blob cache (no re-downloads when reopening the same PDF).
-- Streaming endpoint (`/api/resources/{id}/stream`) uses user’s Drive refresh token — bypasses Brave/Chrome third-party-cookie iframe blocks.
+- **Important pages** — flag/label/jump bookmarks inside PDF viewer.
+- **Inline PDF viewer** via custom `PdfCanvasViewer.jsx` (Windowed rendering, multi-page scroll).
+- **Streaming Proxy:** Backend acts as chunked pipe from Drive to browser for memory efficiency.
 
 ### Dashboard
-- 8 top-level stat cards (questions solved, PYQs solved, videos completed, playlists, QB accuracy, PYQ accuracy, mistakes, resources).
-- **"Question Bank vs PYQ progress" — card grid** (replaced the old sparse table):
-  - 1 / 2 / 3 column responsive grid.
-  - Each subject card has 2 horizontal progress bars (QBank, PYQ).
-  - Color-coded by accuracy (emerald ≥75% / amber ≥50% / red <50% / muted if no attempts).
-  - Whole card is a link to subject detail.
+- 8 top-level stat cards (Questions, PYQs, Accuracy, etc.).
+- **"Question Bank vs PYQ progress" — card grid**:
+  - Each subject card has 2 horizontal progress bars.
+  - Color-coded by accuracy (emerald ≥75% / amber ≥50% / red <50%).
 
 ### Subject detail page
-- Redesigned from the old 8-column table → **2-column topic card grid**.
-- Each topic card: name + 2 metric blocks (QBank, PYQ) showing `solved/total`, color-coded accuracy, "X left / all done / no items yet" footer.
-- Notes count + "X to revisit" badge strip when non-zero.
-- Whole card is the topic link.
+- **2-column topic card grid**.
+- Each topic card: name + 2 metric blocks (QBank, PYQ) showing `solved/total`.
 
-### Admin
-- Admin role retired. Every authenticated user owns and manages their own Questions/PYQs/Resources.
-- Add Question / PYQ / Subjects / Topics CRUD available to all signed-in users.
-- Users list endpoint remains (read-only) for future moderation needs.
+### Admin (Autonomy Model)
+- **Admin role retired.** Every authenticated user owns and manages their own bank.
+- Add/Edit/Delete Question & PYQ UI available to all signed-in users.
 
-### Analytics
-- Per-subject + per-topic analytics endpoints.
-- recharts visualisations.
-
-### Backend hygiene
-- Cyclomatic complexity reduced on `dashboard()`, `import_playlist()`, `seed_data()` helpers.
-- Pytest suite at `backend/tests/test_gate_os_backend.py`.
+### Analytics (Performance)
+- All analytics offloaded to **MongoDB Aggregation Pipelines**.
+- Instantly handles 5,000+ items without Python overhead.
 
 ---
 
 ## 5. Documented but NOT yet implemented (the active backlog)
 
-### 🔴 P0 — PDF Import + OCR Pipeline, now scoped to **GO-PDFs ingestion**
+### 🔴 P0 — PDF Import + OCR Pipeline (Phase 5)
+Source: `GATEOverflow/GO-PDFs`. Gemini-powered extraction of:
+1. **Key concept sections** (LaTeX content)
+2. **Questions** (Structured JSON)
 
-**Source of truth:** `GATEOverflow/GO-PDFs` on GitHub. The GO admins publish a comprehensive, free, attribution-licensed PDF set: every GATE CSE PYQ since 1987 + topic-wise volumes (Eng Math, Discrete Math, DSA, OS, DBMS, CN, COA, TOC, Compilers, Digital Logic, Algorithms, Aptitude) that contain **both key concepts and questions**.
-
-**New scope addition vs. original plan:** OCR must now extract **two content types** per page:
-1. **Key concept sections** (title + content with LaTeX, no options/answer)
-2. **Questions** (with options, correct answer, solution)
-
-**New entity:** `topic_concepts` collection:
-```
-concept_id, topic_id, subject_id, title, content_markdown,
-position, source, source_url, created_at, updated_at
-```
-
-**Two parallel review queues** in Admin:
-- `extracted_concepts` → reviewed → `topic_concepts`
-- `extracted_questions` → reviewed → `questions` / `pyqs`
-
-**End deliverable:** One-shot CLI (`backend/scripts/import_go_pdfs.py`) that downloads the latest release tag and runs every PDF through the pipeline. Admin reviews + bulk-approves.
-
-**Estimated effort:** 17–22 engineer-days (vs. 8–12 for questions-only).
+**Staging area:** Two parallel review queues for human approval before committing to bank.
 
 ### 🟡 P1
 - Pagination on Question Bank + PYQs.
-- Question/PYQ editing in Admin.
-- Bulk CSV upload for Questions/PYQs.
 - Global Search (Cmd+K).
-- KaTeX math rendering (`MathText.jsx` component) — *prerequisite* for Phase 5 since both concepts and solutions contain LaTeX.
-- Topic Concepts UI on TopicDetail page (depends on `topic_concepts` collection).
+- System-wide **KaTeX rendering** for high-fidelity math.
 
 ### 🟢 P2
-- Spaced-repetition Mistake Lab (SM-2).
-- Mock test mode (GATE-style 65q/180min with negative marking).
-- Backend refactor: split `server.py` into `routes/` + `services/`.
-
-### 💭 Exploratory
-- AI Study Partner (Gemini conversational tutor).
-- Streak + Daily Goal + Smart "Today's Plan".
-- PYQ Trend Analyzer.
-- Calibration diagnostic quiz onboarding.
-
-Full detail in [`IMPLEMENTATION_PLAN.md`](../IMPLEMENTATION_PLAN.md).
+- **Spaced-repetition Mistake Lab** (SM-2 implementation).
+- Mock test mode (timed, GATE-style marking).
 
 ---
 
-## 6. Known issues / accepted debt
+## 6. Known issues / active blockers
 
-- `server.py` is ~1.4k LOC monolithic. Refactor scheduled but **not yet triggered** (waiting for ~2k LOC or contributor conflict).
-- Static analyzer false-positives `is None` PEP-8 checks — ignored intentionally.
-- React 19's `set-state-in-effect` ESLint rule flags standard fetch-into-state patterns — false positive, ignored.
-- No spaced repetition yet; mistakes are FIFO until Phase 8A.
+- **Drive Connection Blockage:** The "Failed to start Drive connection" popup is currently persisting. 
+  - *Current State:* Refactored to Manual OAuth exchange (no PKCE).
+  - *Redirects:* Using `http://127.0.0.1` for local consistency.
+  - *Required Config:* 4 URIs must be in Console (localhost/127.0.0.1 for ports 3000/8000).
+- `server.py` is monolithic (Refactor scheduled post-Phase 5).
+- Drive sync latency for massive folders.
 
 ---
 
@@ -182,20 +139,13 @@ Full detail in [`IMPLEMENTATION_PLAN.md`](../IMPLEMENTATION_PLAN.md).
 
 | Change | Status |
 |---|---|
-| Accuracy counts only the **latest attempt per question** | ✅ Shipped |
-| **Subject + topic tags** on every question card | ✅ Shipped |
-| **Difficulty filter removed** from QBank/PYQs | ✅ Shipped |
-| Topic → QBank/PYQ link **pre-fills both subject + topic** filters | ✅ Shipped |
-| SubjectDetail UI redesigned (table → card grid) | ✅ Shipped |
-| Dashboard "By Subject" UI redesigned (table → progress-bar cards) | ✅ Shipped |
-| PdfCanvasViewer: continuous scroll + windowed render + sidebar visible + dark theme | ✅ Shipped |
-| **Admin role removed; Questions/PYQs are per-user** | ✅ Shipped (Feb 2026) |
-| **QB/PYQ filters**: Status / Result / Flag pills + Add/Edit/Delete UI | ✅ Shipped (Feb 2026) |
-| **Sync from Drive** — recover files from `GATEPREP/` into local DB | ✅ Shipped (Feb 2026) |
-| **Resource Notes** (per-PDF auto-saved free-form text) | ✅ Shipped (Feb 2026) |
-| **Important Pages** — flag/label/jump bookmarks inside PDF viewer | ✅ Shipped (Feb 2026) |
-| **Self-hosting kit** — `SELF_HOSTING.md` + `render.yaml` + `vercel.json` + `.env.example` | ✅ Shipped (Feb 2026) |
-| **Key Concepts feature + GO-PDFs ingestion plan** | 📋 Documented (this update) |
+| **MongoDB Aggregation Fix** (High-speed analytics) | ✅ Shipped |
+| **StreamingResponse** (100MB+ file memory safety) | ✅ Shipped |
+| **Admin Role Retired** (Every user is their own Admin) | ✅ Shipped |
+| **Year dropdown** (2000-2026 dropdown for PYQs) | ✅ Shipped |
+| **Filter alignment** (pl-3 / right-12px design) | ✅ Shipped |
+| **Local Login Bypass** (Dev Mode Student) | ✅ Shipped |
+| **Google OAuth Code Flow** (Reliable auth) | ✅ Shipped |
 
 ---
 

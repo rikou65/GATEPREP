@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { Link } from "react-router-dom";
 import { ArrowUpRight, Target, BookCheck, History, ListVideo, AlertOctagon, FolderArchive, TrendingUp, Library } from "lucide-react";
+import Layout from "@/components/Layout";
 
 const StatCard = ({ icon: Icon, label, value, suffix, testId }) => (
   <div className="border border-border rounded-lg p-5 bg-card/40 hover:border-border/80 transition-colors" data-testid={testId}>
@@ -20,45 +21,119 @@ export default function Dashboard() {
   const [data, setData] = useState(null);
   useEffect(() => { api.get("/dashboard").then((r) => setData(r.data?.data)); }, []);
 
-  if (!data) return <div className="text-sm text-muted-foreground">Loading…</div>;
+  if (!data) return (
+    <Layout title="Dashboard">
+      <div className="text-sm text-muted-foreground">Loading…</div>
+    </Layout>
+  );
   const s = data.summary;
 
   return (
-    <div className="space-y-8">
-      <div>
-        <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Overview</div>
-        <h1 className="text-3xl sm:text-4xl font-bold tracking-tight mt-1">Dashboard</h1>
-        <p className="text-sm text-muted-foreground mt-1">Everything you've actually done — no manual status, no guesses.</p>
-      </div>
+    <Layout title="Dashboard">
+      <div className="space-y-8">
+        <div>
+          <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Overview</div>
+          <h1 className="text-3xl sm:text-4xl font-bold tracking-tight mt-1">Dashboard</h1>
+          <p className="text-sm text-muted-foreground mt-1">Everything you've actually done — no manual status, no guesses.</p>
+        </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <StatCard icon={BookCheck} label="Questions Solved" value={s.questions_solved} testId="stat-questions-solved" />
-        <StatCard icon={History} label="PYQs Solved" value={s.pyqs_solved} testId="stat-pyqs-solved" />
-        <StatCard icon={ListVideo} label="Videos Completed" value={s.videos_completed} testId="stat-videos-completed" />
-        <StatCard icon={Library} label="Playlists" value={s.total_playlists} testId="stat-playlists" />
-        <StatCard icon={Target} label="QBank Accuracy" value={s.question_accuracy} suffix="%" testId="stat-qbank-accuracy" />
-        <StatCard icon={TrendingUp} label="PYQ Accuracy" value={s.pyq_accuracy} suffix="%" testId="stat-pyq-accuracy" />
-        <StatCard icon={AlertOctagon} label="Total Mistakes" value={s.total_mistakes} testId="stat-mistakes" />
-        <StatCard icon={FolderArchive} label="Resources" value={s.resources_uploaded} testId="stat-resources" />
-      </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <StatCard icon={BookCheck} label="Questions Solved" value={s.questions_solved} testId="stat-questions-solved" />
+          <StatCard icon={History} label="PYQs Solved" value={s.pyqs_solved} testId="stat-pyqs-solved" />
+          <StatCard icon={ListVideo} label="Videos Completed" value={s.videos_completed} testId="stat-videos-completed" />
+          <StatCard icon={Library} label="Playlists" value={s.total_playlists} testId="stat-playlists" />
+          <StatCard icon={Target} label="QBank Accuracy" value={s.question_accuracy} suffix="%" testId="stat-qbank-accuracy" />
+          <StatCard icon={TrendingUp} label="PYQ Accuracy" value={s.pyq_accuracy} suffix="%" testId="stat-pyq-accuracy" />
+          <StatCard icon={AlertOctagon} label="Total Mistakes" value={s.total_mistakes} testId="stat-mistakes" />
+          <StatCard icon={FolderArchive} label="Resources" value={s.resources_uploaded} testId="stat-resources" />
+        </div>
 
-      <div className="space-y-3">
-        <div className="flex items-end justify-between">
-          <div>
-            <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">By Subject</div>
-            <h2 className="text-xl font-semibold tracking-tight mt-1">Question Bank vs PYQ progress</h2>
+        <div className="space-y-3">
+          <div className="flex items-end justify-between">
+            <div>
+              <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">By Subject</div>
+              <h2 className="text-xl font-semibold tracking-tight mt-1">Question Bank vs PYQ progress</h2>
+            </div>
+            <Link to="/subjects" className="text-xs mono text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
+              View all <ArrowUpRight className="w-3 h-3" />
+            </Link>
           </div>
-          <Link to="/subjects" className="text-xs mono text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
-            View all <ArrowUpRight className="w-3 h-3" />
-          </Link>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+            {data.subjects.map((s) => (
+              <SubjectProgressCard key={s.subject.subject_id} row={s} />
+            ))}
+          </div>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-          {data.subjects.map((s) => (
-            <SubjectProgressCard key={s.subject.subject_id} row={s} />
-          ))}
+
+        {/* Recent Activity Section */}
+        <div className="space-y-3 pt-4 border-t border-border/60">
+          <div className="flex items-end justify-between">
+            <div>
+              <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Activity Log</div>
+              <h2 className="text-xl font-semibold tracking-tight mt-1">Recent attempts</h2>
+            </div>
+          </div>
+          
+          {(!data.recent_activity || data.recent_activity.length === 0) ? (
+            <div className="text-xs text-muted-foreground border border-dashed border-border rounded-lg p-6 text-center">
+              No recent attempts logged. Solve some questions to see your progress here!
+            </div>
+          ) : (
+            <div className="border border-border rounded-lg bg-card/25 divide-y divide-border overflow-hidden" data-testid="dashboard-recent-activity">
+              {data.recent_activity.map((act) => {
+                const isPyq = act.type === "pyq";
+                const dateStr = new Date(act.attempted_at).toLocaleString(undefined, {
+                  month: "short",
+                  day: "numeric",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                });
+                
+                return (
+                  <div key={act.attempt_id} className="p-3 flex items-center justify-between gap-4 hover:bg-secondary/15 transition-colors">
+                    <div className="flex items-center gap-3 min-w-0">
+                      {act.is_correct ? (
+                        <div className="w-5 h-5 rounded-full bg-emerald-500/10 text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-500/20">
+                          ✓
+                        </div>
+                      ) : (
+                        <div className="w-5 h-5 rounded-full bg-red-500/10 text-red-400 flex items-center justify-center shrink-0 border border-red-500/20">
+                          ✗
+                        </div>
+                      )}
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded leading-none ${
+                            isPyq ? "bg-blue-500/10 text-blue-400 border border-blue-500/20" : "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                          }`}>
+                            {isPyq ? `PYQ ${act.year || ""}` : "QBank"}
+                          </span>
+                          <span className="text-xs font-semibold text-foreground/90">
+                            {act.subject_name || "General Question"}
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-muted-foreground mt-0.5 truncate">
+                          {act.topic_name || "General Topic"} · {act.question_type || "MCQ"}
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center gap-4 text-right shrink-0">
+                      <div className="text-[10px] mono text-muted-foreground">
+                        {act.time_taken}s
+                      </div>
+                      <div className="text-[11px] text-muted-foreground mono hidden sm:block">
+                        {dateStr}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
-    </div>
+    </Layout>
   );
 }
 

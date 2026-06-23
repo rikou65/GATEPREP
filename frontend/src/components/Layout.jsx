@@ -4,7 +4,7 @@ import { useAuth } from "@/context/AuthContext";
 import {
   LayoutDashboard, BookOpen, FileQuestion, History, ListVideo,
   FolderArchive, AlertOctagon, BarChart3, Settings, LogOut,
-  GraduationCap,
+  GraduationCap, UploadCloud, ListChecks
 } from "lucide-react";
 
 const NAV = [
@@ -17,6 +17,11 @@ const NAV = [
   { to: "/mistakes", label: "Mistake Lab", icon: AlertOctagon, id: "nav-mistakes" },
   { to: "/analytics", label: "Analytics", icon: BarChart3, id: "nav-analytics" },
   { to: "/settings", label: "Settings", icon: Settings, id: "nav-settings" },
+];
+
+const ADMIN_NAV = [
+  { to: "/admin/import", label: "Import PDF", icon: UploadCloud, id: "nav-import" },
+  { to: "/admin/staging", label: "Staging Queue", icon: ListChecks, id: "nav-staging" },
 ];
 
 export default function Layout({ children }) {
@@ -38,6 +43,27 @@ export default function Layout({ children }) {
         </div>
         <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto">
           {NAV.map((n) => (
+            <NavLink
+              key={n.to}
+              to={n.to}
+              data-testid={n.id}
+              className={({ isActive }) =>
+                `flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors ${
+                  isActive
+                    ? "bg-secondary text-foreground"
+                    : "text-muted-foreground hover:text-foreground hover:bg-secondary/50"
+                }`
+              }
+            >
+              <n.icon className="w-4 h-4" strokeWidth={1.6} />
+              {n.label}
+            </NavLink>
+          ))}
+          
+          <div className="pt-4 pb-1 px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+            Data Ingestion
+          </div>
+          {ADMIN_NAV.map((n) => (
             <NavLink
               key={n.to}
               to={n.to}

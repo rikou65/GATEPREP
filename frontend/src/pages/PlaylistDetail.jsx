@@ -4,6 +4,7 @@ import { Link, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { CheckCircle2, Circle, ArrowLeft, ChevronRight, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
+import Layout from "@/components/Layout";
 
 export default function PlaylistDetail() {
   const { id } = useParams();
@@ -111,7 +112,11 @@ export default function PlaylistDetail() {
     } catch { toast.error("Failed"); }
   };
 
-  if (!playlist) return <div className="text-sm text-muted-foreground">Loading…</div>;
+  if (!playlist) return (
+    <Layout title="Playlist Detail">
+      <div className="text-sm text-muted-foreground">Loading…</div>
+    </Layout>
+  );
 
   const total = playlist.videos.length;
   const completed = playlist.videos.filter(v => v.progress?.completed).length;
@@ -123,108 +128,110 @@ export default function PlaylistDetail() {
   const next = () => activeIdx < total - 1 && setActiveIdx(activeIdx + 1);
 
   return (
-    <div className="space-y-6">
-      <Link to="/playlists" className="text-xs mono text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
-        <ArrowLeft className="w-3 h-3" /> Playlists
-      </Link>
+    <Layout title="Playlist Detail">
+      <div className="space-y-6">
+        <Link to="/playlists" className="text-xs mono text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
+          <ArrowLeft className="w-3 h-3" /> Playlists
+        </Link>
 
-      <div className="space-y-3">
-        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">{playlist.title}</h1>
-        <div className="text-xs text-muted-foreground mono">{playlist.channel_title}</div>
-        <div className="flex items-center gap-3" data-testid="playlist-progress-bar">
-          <div className="flex-1 h-2 bg-secondary rounded overflow-hidden">
-            <div className="h-full bg-emerald-500 transition-all" style={{ width: `${pct}%` }} />
-          </div>
-          <div className="text-xs mono whitespace-nowrap">
-            <span className="text-foreground font-semibold">{completed}</span>
-            <span className="text-muted-foreground">/{total}</span>
-            <span className="text-muted-foreground ml-2">{pct}%</span>
-          </div>
-        </div>
-      </div>
-
-      <div className="grid lg:grid-cols-3 gap-5">
-        <div className="lg:col-span-2 space-y-3">
-          <div className="aspect-video w-full rounded-lg overflow-hidden border border-border bg-black">
-            <div id="yt-player" className="w-full h-full" />
-          </div>
-          {active && (
-            <div className="space-y-2">
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex-1 min-w-0">
-                  <div className="text-xs mono text-muted-foreground">#{String(activeIdx + 1).padStart(2, "0")} of {total}</div>
-                  <div className="text-sm font-medium mt-0.5" data-testid="active-video-title">{active.title}</div>
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  {activeDone ? (
-                    <Button size="sm" variant="outline" onClick={() => unmark(activeIdx)} data-testid="unmark-btn">
-                      <RotateCcw className="w-3.5 h-3.5 mr-1" /> Unmark
-                    </Button>
-                  ) : (
-                    <Button size="sm" onClick={() => markWatched(activeIdx)} data-testid="mark-watched-btn">
-                      <CheckCircle2 className="w-3.5 h-3.5 mr-1" /> Mark watched
-                    </Button>
-                  )}
-                  {activeIdx < total - 1 && (
-                    <Button size="sm" variant="outline" onClick={next} data-testid="next-video-btn">
-                      Next <ChevronRight className="w-3.5 h-3.5 ml-1" />
-                    </Button>
-                  )}
-                </div>
-              </div>
-              <div className="h-1 bg-secondary rounded overflow-hidden">
-                <div className={`h-full transition-all ${activeDone ? "bg-emerald-500" : "bg-blue-500"}`}
-                     style={{ width: `${activePct}%` }} />
-              </div>
-              <div className="text-[10px] mono text-muted-foreground">
-                {activePct}% watched · {activeDone ? "completed" : "in progress"}
-              </div>
+        <div className="space-y-3">
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">{playlist.title}</h1>
+          <div className="text-xs text-muted-foreground mono">{playlist.channel_title}</div>
+          <div className="flex items-center gap-3" data-testid="playlist-progress-bar">
+            <div className="flex-1 h-2 bg-secondary rounded overflow-hidden">
+              <div className="h-full bg-emerald-500 transition-all" style={{ width: `${pct}%` }} />
             </div>
-          )}
+            <div className="text-xs mono whitespace-nowrap">
+              <span className="text-foreground font-semibold">{completed}</span>
+              <span className="text-muted-foreground">/{total}</span>
+              <span className="text-muted-foreground ml-2">{pct}%</span>
+            </div>
+          </div>
         </div>
 
-        <div className="border border-border rounded-lg max-h-[600px] overflow-y-auto">
-          <div className="px-4 py-3 border-b border-border text-xs uppercase tracking-[0.2em] text-muted-foreground sticky top-0 bg-card/80 backdrop-blur z-10">
-            Videos · {completed}/{total}
-          </div>
-          {playlist.videos.map((v, i) => {
-            const done = !!v.progress?.completed;
-            const vpct = v.progress?.watch_percentage || 0;
-            return (
-              <div
-                key={v.video_id}
-                className={`p-3 border-b border-border ${i === activeIdx ? "bg-secondary/50" : "hover:bg-secondary/30"} transition-colors`}
-              >
-                <div className="flex items-start gap-3">
-                  <button
-                    onClick={(e) => { e.stopPropagation(); done ? unmark(i) : markWatched(i); }}
-                    className="mt-0.5 shrink-0"
-                    data-testid={`toggle-watched-${v.video_id}`}
-                    title={done ? "Mark unwatched" : "Mark watched"}
-                  >
-                    {done
-                      ? <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                      : <Circle className="w-4 h-4 text-muted-foreground hover:text-foreground" />}
-                  </button>
-                  <button
-                    onClick={() => setActiveIdx(i)}
-                    className="flex-1 min-w-0 text-left"
-                    data-testid={`video-row-${v.video_id}`}
-                  >
-                    <div className="text-[10px] mono text-muted-foreground">#{String(i + 1).padStart(2, "0")}</div>
-                    <div className="text-sm line-clamp-2">{v.title}</div>
-                    {vpct > 0 && (
-                      <div className="mt-1 h-0.5 bg-secondary rounded">
-                        <div className={`h-0.5 rounded ${done ? "bg-emerald-500" : "bg-blue-500"}`} style={{ width: `${vpct}%` }} />
-                      </div>
+        <div className="grid lg:grid-cols-3 gap-5">
+          <div className="lg:col-span-2 space-y-3">
+            <div className="aspect-video w-full rounded-lg overflow-hidden border border-border bg-black">
+              <div id="yt-player" className="w-full h-full" />
+            </div>
+            {active && (
+              <div className="space-y-2">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs mono text-muted-foreground">#{String(activeIdx + 1).padStart(2, "0")} of {total}</div>
+                    <div className="text-sm font-medium mt-0.5" data-testid="active-video-title">{active.title}</div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {activeDone ? (
+                      <Button size="sm" variant="outline" onClick={() => unmark(activeIdx)} data-testid="unmark-btn">
+                        <RotateCcw className="w-3.5 h-3.5 mr-1" /> Unmark
+                      </Button>
+                    ) : (
+                      <Button size="sm" onClick={() => markWatched(activeIdx)} data-testid="mark-watched-btn">
+                        <CheckCircle2 className="w-3.5 h-3.5 mr-1" /> Mark watched
+                      </Button>
                     )}
-                  </button>
+                    {activeIdx < total - 1 && (
+                      <Button size="sm" variant="outline" onClick={next} data-testid="next-video-btn">
+                        Next <ChevronRight className="w-3.5 h-3.5 ml-1" />
+                      </Button>
+                    )}
+                  </div>
+                </div>
+                <div className="h-1 bg-secondary rounded overflow-hidden">
+                  <div className={`h-full transition-all ${activeDone ? "bg-emerald-500" : "bg-blue-500"}`}
+                       style={{ width: `${activePct}%` }} />
+                </div>
+                <div className="text-[10px] mono text-muted-foreground">
+                  {activePct}% watched · {activeDone ? "completed" : "in progress"}
                 </div>
               </div>
-            );
-          })}
+            )}
+          </div>
+
+          <div className="border border-border rounded-lg max-h-[600px] overflow-y-auto">
+            <div className="px-4 py-3 border-b border-border text-xs uppercase tracking-[0.2em] text-muted-foreground sticky top-0 bg-card/80 backdrop-blur z-10">
+              Videos · {completed}/{total}
+            </div>
+            {playlist.videos.map((v, i) => {
+              const done = !!v.progress?.completed;
+              const vpct = v.progress?.watch_percentage || 0;
+              return (
+                <div
+                  key={v.video_id}
+                  className={`p-3 border-b border-border ${i === activeIdx ? "bg-secondary/50" : "hover:bg-secondary/30"} transition-colors`}
+                >
+                  <div className="flex items-start gap-3">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); done ? unmark(i) : markWatched(i); }}
+                      className="mt-0.5 shrink-0"
+                      data-testid={`toggle-watched-${v.video_id}`}
+                      title={done ? "Mark unwatched" : "Mark watched"}
+                    >
+                      {done
+                        ? <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                        : <Circle className="w-4 h-4 text-muted-foreground hover:text-foreground" />}
+                    </button>
+                    <button
+                      onClick={() => setActiveIdx(i)}
+                      className="flex-1 min-w-0 text-left"
+                      data-testid={`video-row-${v.video_id}`}
+                    >
+                      <div className="text-[10px] mono text-muted-foreground">#{String(i + 1).padStart(2, "0")}</div>
+                      <div className="text-sm line-clamp-2">{v.title}</div>
+                      {vpct > 0 && (
+                        <div className="mt-1 h-0.5 bg-secondary rounded">
+                          <div className={`h-0.5 rounded ${done ? "bg-emerald-500" : "bg-blue-500"}`} style={{ width: `${vpct}%` }} />
+                        </div>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
-    </div>
+    </Layout>
   );
 }

@@ -96,3 +96,8 @@ credentials.json
 *.key
 .credentials
 frontend/node_modules/.cache/default-development/0.pack
+
+# Large PDF folders
+GATE_OVERFLOW/
+UNACADEMY/
+

@@ -18,45 +18,36 @@ export default function AuthCallback() {
   const { setUser, checkAuth } = useAuth();
 
   useEffect(() => {
-    const hash = window.location.hash || "";
-    const match = hash.match(/session_id=([^&]+)/);
-    if (!match) {
-      navigate("/");
-      return;
-    }
-    const sessionId = match[1];
-
-    // If we've already exchanged this session_id in this page lifetime,
-    // the cookie is set — just confirm via /auth/me and route to dashboard.
-    if (processedSessionIds.has(sessionId)) {
+    const urlParams = new URLSearchParams(window.location.search);
+    const code = urlParams.get("code");
+    
+    if (!code) {
+      // Check if we already have a session cookie before bouncing
       (async () => {
-        await checkAuth();
-        window.history.replaceState({}, "", "/dashboard");
-        navigate("/dashboard", { replace: true });
-      })();
-      return;
-    }
-    processedSessionIds.add(sessionId);
-
-    (async () => {
-      try {
-        const r = await api.post("/auth/session", { session_id: sessionId });
-        setUser(r.data?.data?.user || null);
-        window.history.replaceState({}, "", "/dashboard");
-        navigate("/dashboard", { replace: true, state: { user: r.data?.data?.user } });
-      } catch (e) {
-        // The exchange failed. Before bouncing to login, check whether a session
-        // was already established (e.g. a prior tab, or a successful first call
-        // whose response we lost). If yes, route to dashboard instead.
         try {
           const me = await api.get("/auth/me");
           if (me?.data?.data?.user) {
             setUser(me.data.data.user);
-            window.history.replaceState({}, "", "/dashboard");
             navigate("/dashboard", { replace: true });
             return;
           }
         } catch {}
+        navigate("/", { replace: true });
+      })();
+      return;
+    }
+
+    if (processedSessionIds.has(code)) return;
+    processedSessionIds.add(code);
+
+    (async () => {
+      try {
+        const r = await api.post("/auth/session", { code });
+        setUser(r.data?.data?.user || null);
+        window.history.replaceState({}, "", "/dashboard");
+        navigate("/dashboard", { replace: true });
+      } catch (e) {
+        console.error("Auth callback failed:", e);
         navigate("/", { replace: true });
       }
     })();

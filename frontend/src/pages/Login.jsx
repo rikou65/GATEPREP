@@ -1,12 +1,35 @@
-import React from "react";
+import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { GraduationCap, ArrowRight, BookOpen, Brain, BarChart3 } from "lucide-react";
+import { GraduationCap, ArrowRight, BookOpen, Brain, BarChart3, Loader2 } from "lucide-react";
+import { api } from "@/lib/api";
+import { useAuth } from "@/context/AuthContext";
 
 // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
 export default function Login() {
+  const [loading, setLoading] = useState(false);
+  const { setUser } = useAuth();
+
   const handleSignIn = () => {
-    const redirectUrl = window.location.origin + "/dashboard";
-    window.location.href = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(redirectUrl)}`;
+    const clientId = "522307348549-g2f69df6qu1uqn28uqf70sq51uvm42bl.apps.googleusercontent.com";
+    const redirectUri = encodeURIComponent("http://127.0.0.1:3000/auth/callback");
+    const scope = encodeURIComponent("openid email profile");
+    window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code&scope=${scope}&access_type=offline&prompt=consent`;
+  };
+
+  const handleDevLogin = async () => {
+    setLoading(true);
+    try {
+      const r = await api.post("/auth/dev-login");
+      if (r.data?.success) {
+        setUser(r.data.data.user);
+        window.location.href = "/dashboard";
+      }
+    } catch (error) {
+      console.error("Dev login failed:", error);
+      alert("Local login failed. Make sure your backend is running on port 8000.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -52,7 +75,16 @@ export default function Login() {
                 Continue with Google
                 <ArrowRight className="ml-2 w-4 h-4 transition-transform group-hover:translate-x-0.5" />
               </Button>
-              <span className="text-xs text-muted-foreground mono">free · no card</span>
+              
+              <Button
+                variant="outline"
+                onClick={handleDevLogin}
+                className="h-12 px-6 text-sm font-medium border-dashed"
+                disabled={loading}
+              >
+                {loading && <Loader2 className="mr-2 w-4 h-4 animate-spin" />}
+                Quick Access (Dev Mode)
+              </Button>
             </div>
           </div>
 

@@ -13,5 +13,5 @@ export default function ProtectedRoute({ children }) {
     );
   }
   if (!user) return <Navigate to="/" replace />;
-  return <Layout>{children}</Layout>;
+  return children;
 }
