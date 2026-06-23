@@ -24,6 +24,7 @@ jobs:
     env:
       MONGO_URL: mongodb://localhost:27017
       DB_NAME: gateprep_ci
+      JWT_SECRET: test_jwt_secret_key_for_ci_pipeline
       YOUTUBE_API_KEY: ""
       ADMIN_EMAILS: ""
       GOOGLE_DRIVE_CLIENT_ID: ""
@@ -61,7 +62,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
