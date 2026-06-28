@@ -25,6 +25,8 @@ const FilterPills = ({ label, value, onChange, options, testid }) => (
   </div>
 );
 
+import { toast } from "sonner";
+
 export default function QuestionBank() {
   const [subjects, setSubjects] = useState([]);
   const [items, setItems] = useState([]);
@@ -36,6 +38,12 @@ export default function QuestionBank() {
   const [topics, setTopics] = useState([]);
   const [openAdd, setOpenAdd] = useState(false);
   const [editing, setEditing] = useState(null); // question object or null
+
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [notes, setNotes] = useState("");
+  const [savingNote, setSavingNote] = useState(false);
+  const [sessionCorrect, setSessionCorrect] = useState(0);
+  const [sessionTotal, setSessionTotal] = useState(0);
 
   useEffect(() => { api.get("/subjects").then(r => setSubjects(r.data?.data || [])); }, []);
   useEffect(() => {
@@ -51,7 +59,43 @@ export default function QuestionBank() {
       setTotal(r.data?.data?.total || 0);
     });
   };
-  useEffect(load, [filter]);
+
+  useEffect(() => {
+    setActiveIndex(0);
+    load();
+  }, [filter]); // eslint-disable-line
+
+  const activeQ = items[activeIndex];
+
+  useEffect(() => {
+    if (!activeQ) {
+      setNotes("");
+      return;
+    }
+    api.get(`/questions/${activeQ.question_id}/notes`)
+      .then(r => setNotes(r.data?.data?.note_content || ""))
+      .catch(() => setNotes(""));
+  }, [activeQ?.question_id]);
+
+  const saveNotes = async () => {
+    if (!activeQ) return;
+    setSavingNote(true);
+    try {
+      await api.post(`/questions/${activeQ.question_id}/notes`, { note_content: notes });
+      toast.success("Notes saved");
+    } catch {
+      toast.error("Failed to save notes");
+    }
+    setSavingNote(false);
+  };
+
+  const handleAttempted = (attemptResult) => {
+    setSessionTotal(prev => prev + 1);
+    if (attemptResult?.attempt?.is_correct) {
+      setSessionCorrect(prev => prev + 1);
+    }
+    load();
+  };
 
   const showResultFilter = filter.attempted === "true";
 
@@ -73,6 +117,27 @@ export default function QuestionBank() {
     items.forEach(it => { m[it.question_id] = it.flags || []; });
     return m;
   }, [items]);
+
+  const relatedConcepts = useMemo(() => {
+    if (!activeQ) return [];
+    return [
+      activeQ.topic_name || "General Topic",
+      activeQ.subject_name || "General Subject",
+      "SI Unit Precision",
+      "Time Complexity"
+    ].filter(Boolean);
+  }, [activeQ]);
+
+  const aiInsight = useMemo(() => {
+    if (!activeQ) return "";
+    if (activeQ.question_type === "NAT") {
+      return "This is a Numerical Answer Type (NAT). Double-check your decimal conversion and unit prefixes (like milliseconds vs seconds) before submitting!";
+    }
+    if (activeQ.question_type === "MSQ") {
+      return "This is a Multiple Select Question (MSQ) which may have one or more correct options. Note that there is no partial marking!";
+    }
+    return "MCQ questions have negative marking (-1/3). Eliminate obviously incorrect options to improve your accuracy, or use Skip if unsure.";
+  }, [activeQ]);
 
   return (
     <Layout title="Question Bank">
@@ -105,11 +170,6 @@ export default function QuestionBank() {
               className="h-9 pl-3 pr-10 text-sm bg-transparent border border-border rounded-md appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2020%2020%22%3E%3Cpath%20stroke%3D%22%236b7280%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%221.5%22%20d%3D%22m6%208%204%204%204-4%22%2F%3E%3C%2Fsvg%3E')] bg-[position:right_12px_center] bg-[size:16px] bg-no-repeat">
               <option value="">All topics</option>
               {topics.map(t => <option key={t.topic_id} value={t.topic_id}>{t.name}</option>)}
-            </select>
-            <select value={filter.difficulty} onChange={e => setFilter({ ...filter, difficulty: e.target.value })}
-              className="h-9 pl-3 pr-10 text-sm bg-transparent border border-border rounded-md appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2020%2020%22%3E%3Cpath%20stroke%3D%22%236b7280%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%221.5%22%20d%3D%22m6%208%204%204%204-4%22%2F%3E%3C%2Fsvg%3E')] bg-[position:right_12px_center] bg-[size:16px] bg-no-repeat">
-              <option value="">All difficulty</option>
-              <option>Easy</option><option>Medium</option><option>Hard</option>
             </select>
             <select value={filter.question_type} onChange={e => setFilter({ ...filter, question_type: e.target.value })}
               className="h-9 pl-3 pr-10 text-sm bg-transparent border border-border rounded-md appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2020%2020%22%3E%3Cpath%20stroke%3D%22%236b7280%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%221.5%22%20d%3D%22m6%208%204%204%204-4%22%2F%3E%3C%2Fsvg%3E')] bg-[position:right_12px_center] bg-[size:16px] bg-no-repeat">
@@ -162,18 +222,118 @@ export default function QuestionBank() {
             No questions match these filters. Try clearing or click “Add Question” to create one.
           </div>
         ) : (
-          <div>
-            {items.map(q => (
-              <QuestionViewer
-                key={q.question_id}
-                item={{ ...q, flags: flagsByQid[q.question_id] || q.flags || [] }}
-                type="question"
-                onEdit={(it) => setEditing(it)}
-                onDeleted={() => load()}
-                onAttempted={() => load()}
-                onFlagsChanged={(_id, _flags) => load()}
-              />
-            ))}
+          <div className="grid grid-cols-12 gap-6 items-start">
+            {/* Left Pane (Question Viewer) */}
+            <div className="col-span-12 xl:col-span-8 space-y-6">
+              <div className="border border-border rounded-3xl p-6 relative overflow-hidden bg-card/10 backdrop-blur-md">
+                <div className="flex justify-between items-center mb-4">
+                  <span className="text-xs font-mono text-muted-foreground">Question {activeIndex + 1} of {total}</span>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={activeIndex === 0}
+                      onClick={() => setActiveIndex(prev => prev - 1)}
+                    >
+                      Previous
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={activeIndex >= items.length - 1}
+                      onClick={() => setActiveIndex(prev => prev + 1)}
+                    >
+                      Next
+                    </Button>
+                  </div>
+                </div>
+                {activeQ && (
+                  <QuestionViewer
+                    key={activeQ.question_id}
+                    item={{ ...activeQ, flags: flagsByQid[activeQ.question_id] || activeQ.flags || [] }}
+                    type="question"
+                    hideNotes={true}
+                    onEdit={(it) => setEditing(it)}
+                    onDeleted={() => {
+                      load();
+                      setActiveIndex(0);
+                    }}
+                    onAttempted={handleAttempted}
+                    onFlagsChanged={load}
+                  />
+                )}
+              </div>
+            </div>
+
+            {/* Right Pane (Sidebar Details) */}
+            <div className="col-span-12 xl:col-span-4 space-y-6">
+              <div className="border border-border rounded-3xl p-6 bg-card/25 backdrop-blur-xl space-y-6 sticky top-24">
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center">
+                    <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                      Personal Notes
+                    </h3>
+                    <span className="text-[10px] font-mono text-muted-foreground">
+                      {savingNote ? "Saving..." : "Auto-saved"}
+                    </span>
+                  </div>
+                  <textarea
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    onBlur={saveNotes}
+                    placeholder="Jot down formulas or key logic for this question..."
+                    className="w-full h-40 bg-white/5 border border-border rounded-2xl p-4 text-sm text-foreground placeholder:text-muted-foreground/30 focus:ring-1 focus:ring-primary/50 resize-none outline-none"
+                  />
+                </div>
+
+                {relatedConcepts.length > 0 && (
+                  <div className="space-y-3">
+                    <h4 className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Related Concepts</h4>
+                    <div className="flex flex-wrap gap-2">
+                      {relatedConcepts.map((tag, idx) => (
+                        <span
+                          key={idx}
+                          className="px-3 py-1 bg-white/5 border border-border rounded-full text-xs text-foreground/80 hover:text-foreground cursor-pointer transition-colors"
+                        >
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {aiInsight && (
+                  <div className="p-4 border border-blue-500/20 rounded-2xl bg-blue-500/5 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-blue-400 text-sm font-bold">★ AI Insight</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground leading-relaxed">
+                      {aiInsight}
+                    </p>
+                  </div>
+                )}
+
+                <div className="border border-dashed border-border rounded-2xl p-4 space-y-3 bg-card/10">
+                  <h3 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Session Stats</h3>
+                  <div className="flex justify-between items-end">
+                    <div>
+                      <p className="text-2xl font-bold text-foreground">{sessionCorrect}/{sessionTotal}</p>
+                      <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Correct This Session</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-mono text-emerald-400">+{sessionCorrect * 20} XP</p>
+                      <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Earned</p>
+                    </div>
+                  </div>
+                  <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-primary transition-all duration-300"
+                      style={{ width: `${sessionTotal > 0 ? (sessionCorrect / sessionTotal) * 100 : 0}%` }}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         )}
 

@@ -13,7 +13,7 @@ from routes.playlists import router as playlists_router
 from routes.resources import router as resources_router
 from routes.admin_staging import router as admin_staging_router
 
-app = FastAPI(title="GATE Study OS")
+app = FastAPI(title="GATEPREP")
 api = APIRouter(prefix="/api")
 
 # mount extracted routes
@@ -27,7 +27,7 @@ api.include_router(admin_staging_router, prefix="/admin")
 # basic health endpoints
 @api.get("/")
 async def root():
-    return {"service": "gate-study-os", "version": "1.0"}
+    return {"service": "gateprep", "version": "1.0"}
 
 @api.get("/health")
 async def health():

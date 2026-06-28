@@ -103,7 +103,7 @@ def pytest_sessionstart(session):
     
     # 4. Wait for the server to be responsive
     api_url = "http://127.0.0.1:8000/api/health"
-    retries = 20
+    retries = 80
     connected = False
     for i in range(retries):
         try:

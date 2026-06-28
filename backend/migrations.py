@@ -203,6 +203,12 @@ async def _ensure_flag_indexes() -> None:
         )
         await db.questions.create_index([("user_id", 1), ("subject_id", 1)])
         await db.pyqs.create_index([("user_id", 1), ("subject_id", 1)])
+        
+        # Performance indexes for playlists, videos, progress, and notes
+        await db.playlists.create_index([("user_id", 1), ("subject_id", 1)])
+        await db.videos.create_index([("playlist_id", 1), ("position", 1)])
+        await db.video_progress.create_index([("user_id", 1), ("video_id", 1)], unique=True)
+        await db.video_notes.create_index([("user_id", 1), ("video_id", 1)], unique=True)
     except Exception as e:
         logger.warning(f"index creation: {e}")
 

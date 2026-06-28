@@ -54,7 +54,7 @@ class TestPublic:
         r = requests.get(f"{API}/")
         assert r.status_code == 200
         body = r.json()
-        assert body.get("service") == "gate-study-os"
+        assert body.get("service") == "gateprep"
 
     def test_subjects_list(self) -> None:
         r = requests.get(f"{API}/subjects")

@@ -256,251 +256,248 @@ export default function Resources() {
   };
 
   return (
-    <Layout title="Resources">
-      <div className="space-y-6">
-        <div className="flex items-end justify-between gap-4 flex-wrap">
-          <div>
-            <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Library</div>
-            <h1 className="text-3xl sm:text-4xl font-bold tracking-tight mt-1">Resources</h1>
-            <p className="text-sm text-muted-foreground mt-1">
-              Upload from your computer to your own Drive, or link an existing URL. Files live in <code className="mono">GATEPREP/{`{Type}/{Subject}/`}</code>.
-            </p>
-          </div>
-          <div className="flex gap-2">
-
-            <Dialog open={openUpload} onOpenChange={setOpenUpload}>
-              <DialogTrigger asChild>
-                <Button data-testid="upload-resource-btn">
-                  <Upload className="w-4 h-4 mr-1" /> Upload from computer
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="bg-card border-border">
-                <DialogHeader><DialogTitle>Upload to Google Drive</DialogTitle></DialogHeader>
-                {!driveStatus?.connected ? (
-                  <div className="text-sm space-y-3">
-                    <p className="text-muted-foreground">
-                      Connect Google Drive to upload from your computer. Files go into <code className="mono">GATEPREP/</code> in your own Drive.
-                    </p>
-                    <Link to="/settings" className="inline-flex items-center gap-1 text-foreground underline">
-                      <HardDrive className="w-3.5 h-3.5" /> Open Settings to connect
-                    </Link>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    <input
-                      ref={fileRef}
-                      type="file"
-                      onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
-                      className="block w-full text-sm file:mr-3 file:py-2 file:px-4 file:rounded-md file:border-0 file:bg-secondary file:text-foreground hover:file:bg-secondary/80 cursor-pointer"
-                      data-testid="upload-file-input"
-                    />
-                    {uploadFile && (
-                      <div className="text-xs mono text-muted-foreground border border-border rounded p-2 flex items-center gap-2">
-                        <FileText className="w-3.5 h-3.5" />
-                        {uploadFile.name} · {formatSize(uploadFile.size)}
-                      </div>
-                    )}
-                    <Input
-                      placeholder="Title (defaults to filename)"
-                      value={uploadForm.title}
-                      onChange={(e) => setUploadForm({ ...uploadForm, title: e.target.value })}
-                    />
-                    <select
-                      value={uploadForm.subject_id}
-                      onChange={(e) => setUploadForm({ ...uploadForm, subject_id: e.target.value })}
-                      className="w-full h-10 px-3 text-sm bg-transparent border border-border rounded-md"
-                      data-testid="upload-subject-select"
-                    >
-                      <option value="">Subject</option>
-                      {subjects.map(s => <option key={s.subject_id} value={s.subject_id}>{s.name}</option>)}
-                    </select>
-                    <select
-                      value={uploadForm.resource_type}
-                      onChange={(e) => setUploadForm({ ...uploadForm, resource_type: e.target.value })}
-                      className="w-full h-10 px-3 text-sm bg-transparent border border-border rounded-md"
-                    >
-                      {TYPES.map(t => <option key={t}>{t}</option>)}
-                    </select>
-                  </div>
-                )}
-                {driveStatus?.connected && (
-                  <DialogFooter>
-                    <Button onClick={submitUpload} disabled={uploading || !uploadFile} data-testid="upload-confirm-btn">
-                      {uploading ? "Uploading…" : "Upload to my Drive"}
-                    </Button>
-                  </DialogFooter>
-                )}
-              </DialogContent>
-            </Dialog>
-
-            <Dialog open={openLink} onOpenChange={setOpenLink}>
-              <DialogTrigger asChild>
-                <Button variant="outline" data-testid="add-link-btn"><Plus className="w-4 h-4 mr-1" /> Add by URL</Button>
-              </DialogTrigger>
-              <DialogContent className="bg-card border-border">
-                <DialogHeader><DialogTitle>Add Resource by URL</DialogTitle></DialogHeader>
-                <div className="space-y-3">
-                  <Input placeholder="Title" value={linkForm.title} onChange={e => setLinkForm({ ...linkForm, title: e.target.value })} data-testid="resource-title-input" />
-                  <select value={linkForm.subject_id} onChange={e => setLinkForm({ ...linkForm, subject_id: e.target.value })} className="w-full h-10 px-3 text-sm bg-transparent border border-border rounded-md" data-testid="resource-subject-select">
-                    <option value="">Subject</option>
-                    {subjects.map(s => <option key={s.subject_id} value={s.subject_id}>{s.name}</option>)}
-                  </select>
-                  <select value={linkForm.resource_type} onChange={e => setLinkForm({ ...linkForm, resource_type: e.target.value })} className="w-full h-10 px-3 text-sm bg-transparent border border-border rounded-md">
-                    {TYPES.map(t => <option key={t}>{t}</option>)}
-                  </select>
-                  <Input placeholder="External URL (Google Drive, Dropbox…)" value={linkForm.external_url} onChange={e => setLinkForm({ ...linkForm, external_url: e.target.value })} />
+    <Layout title={viewer ? viewer.title : "Resources"} hideSidebar={!!viewer}>
+      {viewer ? (
+        <div
+          className="dark bg-[#0a0a0a] flex flex-col h-screen w-full overflow-hidden"
+          data-testid="resource-viewer"
+        >
+          {viewer.loading ? (
+            <div className="flex-1 bg-card/5 relative min-h-0 flex flex-col items-center justify-center gap-3 text-muted-foreground">
+              <div className="w-8 h-8 border-2 border-border border-t-primary rounded-full animate-spin" />
+              <div className="text-xs font-mono">Streaming from your Drive…</div>
+            </div>
+          ) : viewer.isPdf && viewer.blob ? (
+            <PdfCanvasViewer
+              blob={viewer.blob}
+              notes={viewerNotes.content}
+              importantPages={viewerNotes.important_pages}
+              onNotesChange={saveNotesContent}
+              onTogglePage={togglePage}
+              onUpdateLabel={updatePageLabel}
+              title={viewer.title}
+              onClose={closeViewer}
+            />
+          ) : (
+            <div className="flex-1 flex flex-col min-h-0">
+              <div className="flex items-center justify-between px-5 py-2.5 border-b border-border bg-card/30 shrink-0">
+                <div className="flex items-center gap-2 min-w-0">
+                  <button
+                    onClick={closeViewer}
+                    className="h-8 px-3 inline-flex items-center justify-center rounded-md border border-border hover:bg-secondary/50 text-xs font-semibold text-foreground transition-colors mr-2"
+                  >
+                    ← Back to Library
+                  </button>
+                  <FileText className="w-4 h-4 shrink-0 text-muted-foreground" />
+                  <div className="text-sm font-medium truncate text-foreground">{viewer.title}</div>
                 </div>
-                <DialogFooter><Button onClick={submitLink} data-testid="save-resource-btn">Save</Button></DialogFooter>
-              </DialogContent>
-            </Dialog>
-          </div>
-        </div>
-
-        <div className="flex gap-2 flex-wrap">
-          <select value={filter.subject_id} onChange={e => setFilter({ ...filter, subject_id: e.target.value })} className="h-9 pl-3 pr-10 text-sm bg-transparent border border-border rounded-md appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2020%2020%22%3E%3Cpath%20stroke%3D%22%236b7280%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%221.5%22%20d%3D%22m6%208%204%204%204-4%22%2F%3E%3C%2Fsvg%3E')] bg-[position:right_12px_center] bg-[size:16px] bg-no-repeat">
-            <option value="">All subjects</option>
-            {subjects.map(s => <option key={s.subject_id} value={s.subject_id}>{s.name}</option>)}
-          </select>
-          <select value={filter.resource_type} onChange={e => setFilter({ ...filter, resource_type: e.target.value })} className="h-9 pl-3 pr-10 text-sm bg-transparent border border-border rounded-md appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2020%2020%22%3E%3Cpath%20stroke%3D%22%236b7280%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%221.5%22%20d%3D%22m6%208%204%204%204-4%22%2F%3E%3C%2Fsvg%3E')] bg-[position:right_12px_center] bg-[size:16px] bg-no-repeat">
-            <option value="">All types</option>
-            {TYPES.map(t => <option key={t}>{t}</option>)}
-          </select>
-        </div>
-
-        {lastSync && (
-          <div className="text-xs mono text-muted-foreground border border-border rounded px-3 py-2">
-            Last Drive sync: <span className="text-foreground">{lastSync.synced}</span> restored,{" "}
-            <span className="text-foreground">{lastSync.skipped}</span> already tracked
-            {Array.isArray(lastSync.unknown_subjects) && lastSync.unknown_subjects.length > 0 && (
-              <div className="mt-1 text-amber-500">
-                Skipped folders (no matching subject): {lastSync.unknown_subjects.join(", ")}
-              </div>
-            )}
-          </div>
-        )}
-
-        {items.length === 0 ? (
-          <div className="text-sm text-muted-foreground border border-dashed border-border rounded-lg p-12 text-center flex flex-col items-center gap-2">
-            <FolderArchive className="w-5 h-5" /> No resources yet.
-          </div>
-        ) : (
-          <div className="space-y-10">
-            {groups.map(({ subject, items: subjectItems }) => (
-              <section key={subject.subject_id} data-testid={`resource-group-${subject.subject_id}`}>
-                <div className="flex items-baseline justify-between border-b border-border pb-2 mb-4">
-                  <div>
-                    <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground mono">
-                      Subject · {String(subject.order + 1).padStart(2, "0")}
-                    </div>
-                    <h2 className="text-lg font-semibold tracking-tight mt-0.5">{subject.name}</h2>
-                  </div>
-                  <div className="text-xs mono text-muted-foreground">
-                    {subjectItems.length} resource{subjectItems.length > 1 ? "s" : ""}
-                  </div>
-                </div>
-                <div className="border border-border rounded-lg overflow-hidden">
-                  <table className="w-full text-sm">
-                    <thead className="border-b border-border">
-                      <tr className="text-left text-[10px] uppercase tracking-[0.15em] text-muted-foreground">
-                        <th className="p-3 font-medium">Title</th>
-                        <th className="p-3 font-medium">Type</th>
-                        <th className="p-3 font-medium">Source</th>
-                        <th className="p-3 font-medium">Size</th>
-                        <th className="p-3 font-medium">Open</th>
-                        <th className="p-3"></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {subjectItems.map(r => (
-                        <tr key={r.resource_id} className="border-b border-border hover:bg-muted/30 transition-colors" data-testid={`resource-${r.resource_id}`}>
-                          <td className="p-3 font-medium">{r.title}</td>
-                          <td className="p-3 text-xs mono text-muted-foreground">{r.resource_type}</td>
-                          <td className="p-3 text-xs">
-                            {r.drive_file_id ? (
-                              <span className="inline-flex items-center gap-1 text-emerald-500"><HardDrive className="w-3 h-3" /> Drive</span>
-                            ) : (
-                              <span className="text-muted-foreground">URL</span>
-                            )}
-                          </td>
-                          <td className="p-3 text-xs mono text-muted-foreground">{formatSize(r.file_size)}</td>
-                          <td className="p-3">
-                            <button onClick={() => openResource(r)} className="text-xs inline-flex items-center gap-1 text-muted-foreground hover:text-foreground" data-testid={`open-resource-${r.resource_id}`}>
-                              Open <ExternalLink className="w-3 h-3" />
-                            </button>
-                          </td>
-                          <td className="p-3 text-right">
-                            <button onClick={() => remove(r.resource_id)} data-testid={`delete-resource-${r.resource_id}`} className="text-muted-foreground hover:text-red-500"><Trash2 className="w-3.5 h-3.5" /></button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </section>
-            ))}
-          </div>
-        )}
-
-        {viewer && createPortal(
-          <div
-            className="dark fixed top-0 right-0 bottom-0 left-0 lg:left-64 z-40 bg-[#0a0a0a] flex flex-col"
-            data-testid="resource-viewer"
-          >
-            <div className="flex items-center justify-between px-5 py-2.5 border-b border-white/10 bg-[#161616] shrink-0">
-              <div className="flex items-center gap-2 min-w-0">
-                <FileText className="w-4 h-4 shrink-0 text-neutral-400" />
-                <div className="text-sm font-medium truncate text-neutral-100">{viewer.title}</div>
-              </div>
-              <div className="flex items-center gap-1">
                 {viewer.view_url && (
                   <a
                     href={viewer.view_url}
                     target="_blank"
                     rel="noreferrer"
-                    className="text-xs font-mono text-neutral-400 hover:text-white inline-flex items-center gap-1.5 px-2.5 h-8 rounded-md hover:bg-white/5 transition-colors"
+                    className="text-xs font-mono text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 px-2.5 h-8 rounded-md hover:bg-secondary/50 transition-colors"
                     data-testid="viewer-open-tab"
                   >
                     <Maximize2 className="w-3.5 h-3.5" /> open in new tab
                   </a>
                 )}
-                <button
-                  onClick={closeViewer}
-                  className="h-8 w-8 inline-flex items-center justify-center rounded-md hover:bg-white/5 text-neutral-400 hover:text-white transition-colors"
-                  data-testid="viewer-close-btn"
-                  title="Close (Esc)"
-                >
-                  <X className="w-4 h-4" />
-                </button>
               </div>
+              <iframe
+                src={viewer.embed_url}
+                title={viewer.title}
+                className="flex-1 w-full border-0 bg-white"
+                allow="autoplay"
+              />
             </div>
-            <div className="flex-1 bg-[#0a0a0a] relative min-h-0">
-              {viewer.loading ? (
-                <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-neutral-400">
-                  <div className="w-8 h-8 border-2 border-white/20 border-t-white/80 rounded-full animate-spin" />
-                  <div className="text-xs font-mono">Streaming from your Drive…</div>
+          )}
+        </div>
+      ) : (
+        <div className="space-y-6">
+          <div className="flex items-end justify-between gap-4 flex-wrap">
+            <div>
+              <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Library</div>
+              <h1 className="text-3xl sm:text-4xl font-bold tracking-tight mt-1">Resources</h1>
+              <p className="text-sm text-muted-foreground mt-1">
+                Upload from your computer to your own Drive, or link an existing URL. Files live in <code className="mono">GATEPREP/{`{Type}/{Subject}/`}</code>.
+              </p>
+            </div>
+            <div className="flex gap-2">
+
+              <Dialog open={openUpload} onOpenChange={setOpenUpload}>
+                <DialogTrigger asChild>
+                  <Button data-testid="upload-resource-btn">
+                    <Upload className="w-4 h-4 mr-1" /> Upload from computer
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="bg-card border-border">
+                  <DialogHeader><DialogTitle>Upload to Google Drive</DialogTitle></DialogHeader>
+                  {!driveStatus?.connected ? (
+                    <div className="text-sm space-y-3">
+                      <p className="text-muted-foreground">
+                        Connect Google Drive to upload from your computer. Files go into <code className="mono">GATEPREP/</code> in your own Drive.
+                      </p>
+                      <Link to="/settings" className="inline-flex items-center gap-1 text-foreground underline">
+                        <HardDrive className="w-3.5 h-3.5" /> Open Settings to connect
+                      </Link>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <input
+                        ref={fileRef}
+                        type="file"
+                        onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
+                        className="block w-full text-sm file:mr-3 file:py-2 file:px-4 file:rounded-md file:border-0 file:bg-secondary file:text-foreground hover:file:bg-secondary/80 cursor-pointer"
+                        data-testid="upload-file-input"
+                      />
+                      {uploadFile && (
+                        <div className="text-xs mono text-muted-foreground border border-border rounded p-2 flex items-center gap-2">
+                          <FileText className="w-3.5 h-3.5" />
+                          {uploadFile.name} · {formatSize(uploadFile.size)}
+                        </div>
+                      )}
+                      <Input
+                        placeholder="Title (defaults to filename)"
+                        value={uploadForm.title}
+                        onChange={(e) => setUploadForm({ ...uploadForm, title: e.target.value })}
+                      />
+                      <select
+                        value={uploadForm.subject_id}
+                        onChange={(e) => setUploadForm({ ...uploadForm, subject_id: e.target.value })}
+                        className="w-full h-10 px-3 text-sm bg-transparent border border-border rounded-md"
+                        data-testid="upload-subject-select"
+                      >
+                        <option value="">Subject</option>
+                        {subjects.map(s => <option key={s.subject_id} value={s.subject_id}>{s.name}</option>)}
+                      </select>
+                      <select
+                        value={uploadForm.resource_type}
+                        onChange={(e) => setUploadForm({ ...uploadForm, resource_type: e.target.value })}
+                        className="w-full h-10 px-3 text-sm bg-transparent border border-border rounded-md"
+                      >
+                        {TYPES.map(t => <option key={t}>{t}</option>)}
+                      </select>
+                    </div>
+                  )}
+                  {driveStatus?.connected && (
+                    <DialogFooter>
+                      <Button onClick={submitUpload} disabled={uploading || !uploadFile} data-testid="upload-confirm-btn">
+                        {uploading ? "Uploading…" : "Upload to my Drive"}
+                      </Button>
+                    </DialogFooter>
+                  )}
+                </DialogContent>
+              </Dialog>
+
+              <Dialog open={openLink} onOpenChange={setOpenLink}>
+                <DialogTrigger asChild>
+                  <Button variant="outline" data-testid="add-link-btn"><Plus className="w-4 h-4 mr-1" /> Add by URL</Button>
+                </DialogTrigger>
+                <DialogContent className="bg-card border-border">
+                  <DialogHeader><DialogTitle>Add Resource by URL</DialogTitle></DialogHeader>
+                  <div className="space-y-3">
+                    <Input placeholder="Title" value={linkForm.title} onChange={e => setLinkForm({ ...linkForm, title: e.target.value })} data-testid="resource-title-input" />
+                    <select value={linkForm.subject_id} onChange={e => setLinkForm({ ...linkForm, subject_id: e.target.value })} className="w-full h-10 px-3 text-sm bg-transparent border border-border rounded-md" data-testid="resource-subject-select">
+                      <option value="">Subject</option>
+                      {subjects.map(s => <option key={s.subject_id} value={s.subject_id}>{s.name}</option>)}
+                    </select>
+                    <select value={linkForm.resource_type} onChange={e => setLinkForm({ ...linkForm, resource_type: e.target.value })} className="w-full h-10 px-3 text-sm bg-transparent border border-border rounded-md">
+                      {TYPES.map(t => <option key={t}>{t}</option>)}
+                    </select>
+                    <Input placeholder="External URL (Google Drive, Dropbox…)" value={linkForm.external_url} onChange={e => setLinkForm({ ...linkForm, external_url: e.target.value })} />
+                  </div>
+                  <DialogFooter><Button onClick={submitLink} data-testid="save-resource-btn">Save</Button></DialogFooter>
+                </DialogContent>
+              </Dialog>
+            </div>
+          </div>
+
+          <div className="flex gap-2 flex-wrap">
+            <select value={filter.subject_id} onChange={e => setFilter({ ...filter, subject_id: e.target.value })} className="h-9 pl-3 pr-10 text-sm bg-transparent border border-border rounded-md appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2020%2020%22%3E%3Cpath%20stroke%3D%22%236b7280%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%221.5%22%20d%3D%22m6%208%204%204%204-4%22%2F%3E%3C%2Fsvg%3E')] bg-[position:right_12px_center] bg-[size:16px] bg-no-repeat">
+              <option value="">All subjects</option>
+              {subjects.map(s => <option key={s.subject_id} value={s.subject_id}>{s.name}</option>)}
+            </select>
+            <select value={filter.resource_type} onChange={e => setFilter({ ...filter, resource_type: e.target.value })} className="h-9 pl-3 pr-10 text-sm bg-transparent border border-border rounded-md appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2020%2020%22%3E%3Cpath%20stroke%3D%22%236b7280%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%221.5%22%20d%3D%22m6%208%204%204%204-4%22%2F%3E%3C%2Fsvg%3E')] bg-[position:right_12px_center] bg-[size:16px] bg-no-repeat">
+              <option value="">All types</option>
+              {TYPES.map(t => <option key={t}>{t}</option>)}
+            </select>
+          </div>
+
+          {lastSync && (
+            <div className="text-xs mono text-muted-foreground border border-border rounded px-3 py-2">
+              Last Drive sync: <span className="text-foreground">{lastSync.synced}</span> restored,{" "}
+              <span className="text-foreground">{lastSync.skipped}</span> already tracked
+              {Array.isArray(lastSync.unknown_subjects) && lastSync.unknown_subjects.length > 0 && (
+                <div className="mt-1 text-amber-500">
+                  Skipped folders (no matching subject): {lastSync.unknown_subjects.join(", ")}
                 </div>
-              ) : viewer.isPdf && viewer.blob ? (
-                <PdfCanvasViewer
-                  blob={viewer.blob}
-                  notes={viewerNotes.content}
-                  importantPages={viewerNotes.important_pages}
-                  onNotesChange={saveNotesContent}
-                  onTogglePage={togglePage}
-                  onUpdateLabel={updatePageLabel}
-                />
-              ) : (
-                <iframe
-                  src={viewer.embed_url}
-                  title={viewer.title}
-                  className="w-full h-full border-0 bg-white"
-                  allow="autoplay"
-                />
               )}
             </div>
-          </div>,
-          document.body
-        )}
-      </div>
+          )}
+
+          {items.length === 0 ? (
+            <div className="text-sm text-muted-foreground border border-dashed border-border rounded-lg p-12 text-center flex flex-col items-center gap-2">
+              <FolderArchive className="w-5 h-5" /> No resources yet.
+            </div>
+          ) : (
+            <div className="space-y-10">
+              {groups.map(({ subject, items: subjectItems }) => (
+                <section key={subject.subject_id} data-testid={`resource-group-${subject.subject_id}`}>
+                  <div className="flex items-baseline justify-between border-b border-border pb-2 mb-4">
+                    <div>
+                      <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground mono">
+                        Subject · {String(subject.order + 1).padStart(2, "0")}
+                      </div>
+                      <h2 className="text-lg font-semibold tracking-tight mt-0.5">{subject.name}</h2>
+                    </div>
+                    <div className="text-xs mono text-muted-foreground">
+                      {subjectItems.length} resource{subjectItems.length > 1 ? "s" : ""}
+                    </div>
+                  </div>
+                  <div className="border border-border rounded-lg overflow-hidden">
+                    <table className="w-full text-sm">
+                      <thead className="border-b border-border">
+                        <tr className="text-left text-[10px] uppercase tracking-[0.15em] text-muted-foreground">
+                          <th className="p-3 font-medium">Title</th>
+                          <th className="p-3 font-medium">Type</th>
+                          <th className="p-3 font-medium">Source</th>
+                          <th className="p-3 font-medium">Size</th>
+                          <th className="p-3 font-medium">Open</th>
+                          <th className="p-3"></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {subjectItems.map(r => (
+                          <tr key={r.resource_id} className="border-b border-border hover:bg-muted/30 transition-colors" data-testid={`resource-${r.resource_id}`}>
+                            <td className="p-3 font-medium">{r.title}</td>
+                            <td className="p-3 text-xs mono text-muted-foreground">{r.resource_type}</td>
+                            <td className="p-3 text-xs">
+                              {r.drive_file_id ? (
+                                <span className="inline-flex items-center gap-1 text-emerald-500"><HardDrive className="w-3 h-3" /> Drive</span>
+                              ) : (
+                                <span className="text-muted-foreground">URL</span>
+                              )}
+                            </td>
+                            <td className="p-3 text-xs mono text-muted-foreground">{formatSize(r.file_size)}</td>
+                            <td className="p-3">
+                              <button onClick={() => openResource(r)} className="text-xs inline-flex items-center gap-1 text-muted-foreground hover:text-foreground" data-testid={`open-resource-${r.resource_id}`}>
+                                Open <ExternalLink className="w-3 h-3" />
+                              </button>
+                            </td>
+                            <td className="p-3 text-right">
+                              <button onClick={() => remove(r.resource_id)} data-testid={`delete-resource-${r.resource_id}`} className="text-muted-foreground hover:text-red-500"><Trash2 className="w-3.5 h-3.5" /></button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </Layout>
   );
 }

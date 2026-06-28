@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-export default function QuestionViewer({ item, type = "question", onAttempted, onEdit, onDeleted, onFlagsChanged }) {
+export default function QuestionViewer({ item, type = "question", onAttempted, onEdit, onDeleted, onFlagsChanged, hideNotes = false }) {
   const id = type === "pyq" ? item.pyq_id : item.question_id;
   const baseUrl = type === "pyq" ? `/pyqs/${id}` : `/questions/${id}`;
   const [selected, setSelected] = useState(null);
@@ -309,7 +309,7 @@ export default function QuestionViewer({ item, type = "question", onAttempted, o
         </div>
       )}
 
-      {type === "question" && (
+      {type === "question" && !hideNotes && (
         <div className="space-y-2 pt-2">
           <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">My Notes</div>
           <Textarea

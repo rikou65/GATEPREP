@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useMemo } from "react";
 import { api } from "@/lib/api";
 import { Link, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -13,8 +13,40 @@ export default function PlaylistDetail() {
   const playerRef = useRef(null);
   const trackRef = useRef(null);
 
+  const [notes, setNotes] = useState("");
+  const [savingNote, setSavingNote] = useState(false);
+  const [subjects, setSubjects] = useState([]);
+
   const load = () => api.get(`/playlists/${id}`).then(r => setPlaylist(r.data?.data));
   useEffect(() => { load(); }, [id]);
+
+  useEffect(() => {
+    api.get("/subjects").then(r => setSubjects(r.data?.data || []));
+  }, []);
+
+  const active = playlist?.videos?.[activeIdx];
+
+  useEffect(() => {
+    if (!active) {
+      setNotes("");
+      return;
+    }
+    api.get(`/videos/${active.video_id}/notes`)
+      .then(r => setNotes(r.data?.data?.note_content || ""))
+      .catch(() => setNotes(""));
+  }, [active?.video_id]);
+
+  const saveNotes = async () => {
+    if (!active) return;
+    setSavingNote(true);
+    try {
+      await api.post(`/videos/${active.video_id}/notes`, { note_content: notes });
+      toast.success("Notes saved");
+    } catch {
+      toast.error("Failed to save notes");
+    }
+    setSavingNote(false);
+  };
 
   // Load YouTube IFrame API and (re)initialise player when active video changes
   useEffect(() => {
@@ -112,6 +144,14 @@ export default function PlaylistDetail() {
     } catch { toast.error("Failed"); }
   };
 
+  const subjectName = useMemo(() => {
+    if (!playlist || !subjects.length) return "General Subject";
+    const found = subjects.find(s => s.subject_id === playlist.subject_id);
+    return found ? found.name : "General Subject";
+  }, [playlist, subjects]);
+
+  // Key moments and active recall memos removed per requirements
+
   if (!playlist) return (
     <Layout title="Playlist Detail">
       <div className="text-sm text-muted-foreground">Loading…</div>
@@ -121,11 +161,19 @@ export default function PlaylistDetail() {
   const total = playlist.videos.length;
   const completed = playlist.videos.filter(v => v.progress?.completed).length;
   const pct = total ? Math.round((completed / total) * 100) : 0;
-  const active = playlist.videos[activeIdx];
   const activePct = active?.progress?.watch_percentage || 0;
   const activeDone = !!active?.progress?.completed;
 
   const next = () => activeIdx < total - 1 && setActiveIdx(activeIdx + 1);
+
+  const seekToTime = (seconds) => {
+    if (playerRef.current && typeof playerRef.current.seekTo === "function") {
+      playerRef.current.seekTo(seconds, true);
+      playerRef.current.playVideo();
+    } else {
+      toast.error("Player not ready yet");
+    }
+  };
 
   return (
     <Layout title="Playlist Detail">
@@ -149,86 +197,134 @@ export default function PlaylistDetail() {
           </div>
         </div>
 
-        <div className="grid lg:grid-cols-3 gap-5">
-          <div className="lg:col-span-2 space-y-3">
-            <div className="aspect-video w-full rounded-lg overflow-hidden border border-border bg-black">
+        <div className="grid grid-cols-12 gap-6 items-start">
+          {/* Left Column (60%) */}
+          <div className="col-span-12 xl:col-span-7 space-y-6">
+            <div className="aspect-video w-full rounded-3xl overflow-hidden border border-border bg-black">
               <div id="yt-player" className="w-full h-full" />
             </div>
             {active && (
-              <div className="space-y-2">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="text-xs mono text-muted-foreground">#{String(activeIdx + 1).padStart(2, "0")} of {total}</div>
-                    <div className="text-sm font-medium mt-0.5" data-testid="active-video-title">{active.title}</div>
+              <div className="space-y-4">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-mono text-muted-foreground uppercase tracking-widest">
+                      Active Video
+                    </span>
+                    <span className="px-2 py-0.5 bg-primary/10 border border-primary/20 rounded-full text-[10px] text-primary">
+                      {subjectName}
+                    </span>
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    {activeDone ? (
-                      <Button size="sm" variant="outline" onClick={() => unmark(activeIdx)} data-testid="unmark-btn">
-                        <RotateCcw className="w-3.5 h-3.5 mr-1" /> Unmark
-                      </Button>
-                    ) : (
-                      <Button size="sm" onClick={() => markWatched(activeIdx)} data-testid="mark-watched-btn">
-                        <CheckCircle2 className="w-3.5 h-3.5 mr-1" /> Mark watched
-                      </Button>
-                    )}
-                    {activeIdx < total - 1 && (
-                      <Button size="sm" variant="outline" onClick={next} data-testid="next-video-btn">
-                        Next <ChevronRight className="w-3.5 h-3.5 ml-1" />
-                      </Button>
-                    )}
+                  <h2 className="text-xl font-bold text-foreground mt-1" data-testid="active-video-title">
+                    {active.title}
+                  </h2>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {playlist.channel_title}
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  {activeDone ? (
+                    <Button size="sm" variant="outline" onClick={() => unmark(activeIdx)} data-testid="unmark-btn">
+                      <RotateCcw className="w-3.5 h-3.5 mr-1" /> Unmark
+                    </Button>
+                  ) : (
+                    <Button size="sm" onClick={() => markWatched(activeIdx)} data-testid="mark-watched-btn">
+                      <CheckCircle2 className="w-3.5 h-3.5 mr-1" /> Mark watched
+                    </Button>
+                  )}
+                  {activeIdx < total - 1 && (
+                    <Button size="sm" variant="outline" onClick={next} data-testid="next-video-btn">
+                      Next Video <ChevronRight className="w-3.5 h-3.5 ml-1" />
+                    </Button>
+                  )}
+                </div>
+
+                <div className="space-y-1">
+                  <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full transition-all duration-300 ${activeDone ? "bg-emerald-500" : "bg-primary"}`}
+                      style={{ width: `${activePct}%` }}
+                    />
                   </div>
-                </div>
-                <div className="h-1 bg-secondary rounded overflow-hidden">
-                  <div className={`h-full transition-all ${activeDone ? "bg-emerald-500" : "bg-blue-500"}`}
-                       style={{ width: `${activePct}%` }} />
-                </div>
-                <div className="text-[10px] mono text-muted-foreground">
-                  {activePct}% watched · {activeDone ? "completed" : "in progress"}
+                  <div className="text-[10px] font-mono text-muted-foreground">
+                    {activePct}% watched · {activeDone ? "completed" : "in progress"}
+                  </div>
                 </div>
               </div>
             )}
-          </div>
 
-          <div className="border border-border rounded-lg max-h-[600px] overflow-y-auto">
-            <div className="px-4 py-3 border-b border-border text-xs uppercase tracking-[0.2em] text-muted-foreground sticky top-0 bg-card/80 backdrop-blur z-10">
-              Videos · {completed}/{total}
-            </div>
-            {playlist.videos.map((v, i) => {
-              const done = !!v.progress?.completed;
-              const vpct = v.progress?.watch_percentage || 0;
-              return (
-                <div
-                  key={v.video_id}
-                  className={`p-3 border-b border-border ${i === activeIdx ? "bg-secondary/50" : "hover:bg-secondary/30"} transition-colors`}
-                >
-                  <div className="flex items-start gap-3">
-                    <button
-                      onClick={(e) => { e.stopPropagation(); done ? unmark(i) : markWatched(i); }}
-                      className="mt-0.5 shrink-0"
-                      data-testid={`toggle-watched-${v.video_id}`}
-                      title={done ? "Mark unwatched" : "Mark watched"}
-                    >
-                      {done
-                        ? <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                        : <Circle className="w-4 h-4 text-muted-foreground hover:text-foreground" />}
-                    </button>
-                    <button
+            {/* Horizontal Playlist Queue */}
+            <div className="space-y-3 pt-2">
+              <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Playlist Queue</h3>
+              <div className="flex gap-4 overflow-x-auto pb-4 pt-1 snap-x scrollbar-thin scrollbar-thumb-muted">
+                {playlist.videos.map((v, i) => {
+                  const isActive = i === activeIdx;
+                  const isDone = !!v.progress?.completed;
+                  return (
+                    <div
+                      key={v.video_id}
                       onClick={() => setActiveIdx(i)}
-                      className="flex-1 min-w-0 text-left"
+                      className={`min-w-[220px] max-w-[220px] snap-start border rounded-2xl p-4 cursor-pointer transition-all duration-200 ${
+                        isActive
+                          ? "bg-secondary/50 border-primary"
+                          : "bg-card/20 border-border hover:bg-card/40 hover:border-muted-foreground"
+                      }`}
                       data-testid={`video-row-${v.video_id}`}
                     >
-                      <div className="text-[10px] mono text-muted-foreground">#{String(i + 1).padStart(2, "0")}</div>
-                      <div className="text-sm line-clamp-2">{v.title}</div>
-                      {vpct > 0 && (
-                        <div className="mt-1 h-0.5 bg-secondary rounded">
-                          <div className={`h-0.5 rounded ${done ? "bg-emerald-500" : "bg-blue-500"}`} style={{ width: `${vpct}%` }} />
+                      <div className="flex justify-between items-start gap-1">
+                        <span className="text-[10px] font-mono text-muted-foreground">#{String(i + 1).padStart(2, "0")}</span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            isDone ? unmark(i) : markWatched(i);
+                          }}
+                          data-testid={`toggle-watched-${v.video_id}`}
+                        >
+                          {isDone ? (
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                          ) : (
+                            <Circle className="w-3.5 h-3.5 text-muted-foreground hover:text-foreground" />
+                          )}
+                        </button>
+                      </div>
+                      <p className="text-xs font-medium mt-1 line-clamp-2 text-foreground/90">{v.title}</p>
+                      {v.progress?.watch_percentage > 0 && (
+                        <div className="mt-2 h-1 bg-secondary rounded-full overflow-hidden">
+                          <div
+                            className={`h-full ${isDone ? "bg-emerald-400" : "bg-primary"}`}
+                            style={{ width: `${v.progress.watch_percentage}%` }}
+                          />
                         </div>
                       )}
-                    </button>
-                  </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* Right Column (40%) */}
+          <div className="col-span-12 xl:col-span-5 space-y-6">
+            <div className="border border-border rounded-3xl p-6 bg-card/25 backdrop-blur-xl sticky top-24">
+              {/* Personal Notes */}
+              <div className="space-y-2 h-full flex flex-col">
+                <div className="flex justify-between items-center">
+                  <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+                    Video Notes
+                  </h3>
+                  <span className="text-[10px] font-mono text-muted-foreground">
+                    {savingNote ? "Saving..." : "Auto-saved"}
+                  </span>
                 </div>
-              );
-            })}
+                <textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  onBlur={saveNotes}
+                  placeholder="Capture key equations, proofs, or notes for this video..."
+                  className="w-full h-[32rem] bg-white/5 border border-border rounded-2xl p-4 text-sm text-foreground placeholder:text-muted-foreground/30 focus:ring-1 focus:ring-primary/50 resize-none outline-none"
+                />
+              </div>
+            </div>
           </div>
         </div>
       </div>

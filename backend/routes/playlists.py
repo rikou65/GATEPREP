@@ -212,3 +212,26 @@ async def update_video_progress(video_id: str, body: VideoProgressIn, user=Depen
         upsert=True,
     )
     return ok({"watch_percentage": body.watch_percentage, "completed": completed})
+
+
+class VideoNotesIn(BaseModel):
+    note_content: str
+
+
+@router.get("/videos/{video_id}/notes")
+async def get_video_notes(video_id: str, user=Depends(get_current_user)):
+    n = await db.video_notes.find_one({"user_id": user["user_id"], "video_id": video_id}, {"_id": 0})
+    return ok(n or {"note_content": "", "video_id": video_id})
+
+
+@router.post("/videos/{video_id}/notes")
+async def save_video_notes(video_id: str, body: VideoNotesIn, user=Depends(get_current_user)):
+    await db.video_notes.update_one(
+        {"user_id": user["user_id"], "video_id": video_id},
+        {"$set": {"note_content": body.note_content, "updated_at": iso(now_utc())},
+         "$setOnInsert": {"note_id": new_id("vnote"), "user_id": user["user_id"],
+                          "video_id": video_id, "created_at": iso(now_utc())}},
+        upsert=True,
+    )
+    return ok({"saved": True})
+
