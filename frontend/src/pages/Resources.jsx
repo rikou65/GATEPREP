@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useMemo } from "react";
 import { createPortal } from "react-dom";
-import { api } from "@/lib/api";
+import { api, API } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
@@ -176,24 +176,20 @@ export default function Resources() {
       }));
 
       if (data.kind === "drive") {
-        const cached = blobCache.current.get(r.resource_id);
-        if (cached) {
-          const isPdf = (cached.type || "").includes("pdf") || r.title?.toLowerCase().endsWith(".pdf");
-          if (isPdf) {
-            setViewer({ resource_id: r.resource_id, title: r.title, blob: cached, view_url: data.view_url, isPdf: true, loading: false });
-          } else {
+        const isPdf = r.title?.toLowerCase().endsWith(".pdf") || (r.mime_type || "").includes("pdf");
+        if (isPdf) {
+          const streamUrl = `${API}/resources/${r.resource_id}/stream`;
+          setViewer({ resource_id: r.resource_id, title: r.title, streamUrl, view_url: data.view_url, isPdf: true, loading: false });
+        } else {
+          const cached = blobCache.current.get(r.resource_id);
+          if (cached) {
             const blobUrl = URL.createObjectURL(cached);
             setViewer({ resource_id: r.resource_id, title: r.title, embed_url: blobUrl, view_url: data.view_url, isBlob: true, loading: false });
+            return;
           }
-          return;
-        }
-        setViewer({ resource_id: r.resource_id, title: r.title, blob: null, view_url: data.view_url, isPdf: true, loading: true });
-        const blobRes = await api.get(`/resources/${r.resource_id}/stream`, { responseType: "blob" });
-        blobCache.current.set(r.resource_id, blobRes.data);
-        const isPdf = (blobRes.data?.type || "").includes("pdf") || r.title?.toLowerCase().endsWith(".pdf");
-        if (isPdf) {
-          setViewer({ resource_id: r.resource_id, title: r.title, blob: blobRes.data, view_url: data.view_url, isPdf: true, loading: false });
-        } else {
+          setViewer({ resource_id: r.resource_id, title: r.title, blob: null, view_url: data.view_url, isPdf: false, loading: true });
+          const blobRes = await api.get(`/resources/${r.resource_id}/stream`, { responseType: "blob" });
+          blobCache.current.set(r.resource_id, blobRes.data);
           const blobUrl = URL.createObjectURL(blobRes.data);
           setViewer({ resource_id: r.resource_id, title: r.title, embed_url: blobUrl, view_url: data.view_url, isBlob: true, loading: false });
         }
@@ -267,9 +263,10 @@ export default function Resources() {
               <div className="w-8 h-8 border-2 border-border border-t-primary rounded-full animate-spin" />
               <div className="text-xs font-mono">Streaming from your Drive…</div>
             </div>
-          ) : viewer.isPdf && viewer.blob ? (
+          ) : viewer.isPdf && (viewer.blob || viewer.streamUrl) ? (
             <PdfCanvasViewer
               blob={viewer.blob}
+              streamUrl={viewer.streamUrl}
               notes={viewerNotes.content}
               importantPages={viewerNotes.important_pages}
               onNotesChange={saveNotesContent}

@@ -48,6 +48,7 @@ const RENDER_WINDOW = 2;
  */
 export default function PdfCanvasViewer({
   blob,
+  streamUrl,
   notes = "",
   importantPages = [],
   onNotesChange,
@@ -636,7 +637,7 @@ export default function PdfCanvasViewer({
   return (
     <div className="w-full h-full flex flex-col bg-[#0a0a0a]">
       <Document
-        file={blob}
+        file={streamUrl ? { url: streamUrl, withCredentials: true } : blob}
         onLoadSuccess={onLoad}
         className="flex-1 flex flex-col min-h-0 w-full relative"
         loading={

@@ -599,7 +599,7 @@ async def resource_view(resource_id: str, request: Request, user=Depends(get_cur
 
 
 @router.get("/resources/{resource_id}/stream")
-async def resource_stream(resource_id: str, user=Depends(get_current_user)):
+async def resource_stream(resource_id: str, request: Request, user=Depends(get_current_user)):
     res = await db.resources.find_one({"resource_id": resource_id, "user_id": user["user_id"]}, {"_id": 0})
     if not res:
         return err("not_found", "Resource not found", 404)
@@ -612,32 +612,47 @@ async def resource_stream(resource_id: str, user=Depends(get_current_user)):
         return err("drive_not_connected", "Drive not connected", 400)
         
     try:
-        # Get metadata for headers
         service = build("drive", "v3", credentials=creds, cache_discovery=False)
         meta = service.files().get(fileId=drive_file_id, fields="mimeType,name,size").execute()
-        
-        async def stream_file():
-            async with httpx.AsyncClient() as client:
-                async with client.stream(
-                    "GET",
-                    f"https://www.googleapis.com/drive/v3/files/{drive_file_id}?alt=media",
-                    headers={"Authorization": f"Bearer {creds.token}"},
-                    timeout=None
-                ) as r:
-                    r.raise_for_status()
-                    async for chunk in r.aiter_bytes():
+        file_size = int(meta.get("size", 0))
+
+        range_header = request.headers.get("range")
+        req_headers = {"Authorization": f"Bearer {creds.token}"}
+        if range_header:
+            req_headers["Range"] = range_header
+
+        drive_url = f"https://www.googleapis.com/drive/v3/files/{drive_file_id}?alt=media"
+
+        async with httpx.AsyncClient() as client:
+            async with client.stream("GET", drive_url, headers=req_headers, timeout=None) as drive_resp:
+                drive_resp.raise_for_status()
+                resp_headers = {
+                    "Content-Disposition": f'inline; filename="{meta.get("name", "file")}"',
+                    "Accept-Ranges": "bytes",
+                    "Cache-Control": "private, max-age=300",
+                    "X-Frame-Options": "SAMEORIGIN",
+                }
+                status_code = drive_resp.status_code
+                media_type = meta.get("mimeType", "application/octet-stream")
+
+                if status_code == 206:
+                    resp_headers["Content-Range"] = drive_resp.headers.get("content-range", "")
+                    content_length = drive_resp.headers.get("content-length")
+                    if content_length:
+                        resp_headers["Content-Length"] = content_length
+                else:
+                    resp_headers["Content-Length"] = str(file_size)
+
+                async def stream_file():
+                    async for chunk in drive_resp.aiter_bytes():
                         yield chunk
 
-        return StreamingResponse(
-            stream_file(),
-            media_type=meta.get("mimeType", "application/octet-stream"),
-            headers={
-                "Content-Disposition": f'inline; filename="{meta.get("name", "file")}"',
-                "Content-Length": str(meta.get("size", "")),
-                "Cache-Control": "private, max-age=300",
-                "X-Frame-Options": "SAMEORIGIN",
-            },
-        )
+                return StreamingResponse(
+                    stream_file(),
+                    status_code=status_code,
+                    media_type=media_type,
+                    headers=resp_headers,
+                )
     except Exception as e:
         logger.error(f"Drive stream failed for {resource_id}: {e}")
         return err("stream_failed", str(e), 502)
