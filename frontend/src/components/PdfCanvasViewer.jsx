@@ -716,7 +716,7 @@ export default function PdfCanvasViewer({
                               pageNumber={p}
                               width={renderWidth}
                               renderTextLayer={true}
-                              renderAnnotationLayer={true}
+                              renderAnnotationLayer={false}
                               onRenderSuccess={onPageRenderSuccess(p)}
                               loading={
                                 <div className="flex items-center justify-center" style={{ height: baseSlotHeight }}>
