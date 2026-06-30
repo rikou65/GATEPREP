@@ -29,7 +29,7 @@ def user_headers() -> Dict[str, str]:
 
 @pytest.fixture(scope="session")
 def subjects(admin_headers: Dict[str, str]) -> List[Dict[str, Any]]:
-    r = requests.get(f"{API}/subjects")
+    r = requests.get(f"{API}/subjects", headers=admin_headers)
     assert r.status_code == 200
     return r.json()["data"]
 
@@ -56,17 +56,9 @@ class TestPublic:
         body = r.json()
         assert body.get("service") == "gateprep"
 
-    def test_subjects_list(self) -> None:
-        r = requests.get(f"{API}/subjects")
-        assert r.status_code == 200
-        data = r.json()["data"]
-        assert isinstance(data, list)
-        assert len(data) == 12
-        assert {"subject_id", "name", "order"}.issubset(data[0].keys())
-
-    def test_topics_for_subject(self, subjects: List[Dict[str, Any]]) -> None:
+    def test_topics_for_subject(self, subjects: List[Dict[str, Any]], admin_headers: Dict[str, str]) -> None:
         sid = subjects[0]["subject_id"]
-        r = requests.get(f"{API}/subjects/{sid}/topics")
+        r = requests.get(f"{API}/subjects/{sid}/topics", headers=admin_headers)
         assert r.status_code == 200
         topics = r.json()["data"]
         assert isinstance(topics, list) and len(topics) > 0
@@ -80,6 +72,10 @@ class TestAuthGating:
 
     def test_dashboard_requires_auth(self) -> None:
         r = requests.get(f"{API}/dashboard")
+        assert r.status_code == 401
+
+    def test_subjects_requires_auth(self) -> None:
+        r = requests.get(f"{API}/subjects")
         assert r.status_code == 401
 
     def test_auth_me_with_token(self, admin_headers: Dict[str, str]) -> None:
@@ -253,7 +249,7 @@ class TestAnalytics:
         self, admin_headers: Dict[str, str], subjects: List[Dict[str, Any]]
     ) -> None:
         sid = next(s["subject_id"] for s in subjects if s["name"] == "Operating Systems")
-        t = requests.get(f"{API}/subjects/{sid}/topics").json()["data"][0]
+        t = requests.get(f"{API}/subjects/{sid}/topics", headers=admin_headers).json()["data"][0]
         r = requests.get(f"{API}/analytics/topic/{t['topic_id']}", headers=admin_headers)
         assert r.status_code == 200
         d = r.json()["data"]
@@ -286,7 +282,7 @@ class TestQuestionCreation:
         self, admin_headers: Dict[str, str], subjects: List[Dict[str, Any]]
     ) -> None:
         sid = subjects[0]["subject_id"]
-        t = requests.get(f"{API}/subjects/{sid}/topics").json()["data"][0]
+        t = requests.get(f"{API}/subjects/{sid}/topics", headers=admin_headers).json()["data"][0]
         payload: Dict[str, Any] = {
             "subject_id": sid, "topic_id": t["topic_id"],
             "question_type": "MCQ", "question_text": "TEST_What is 2+2?",

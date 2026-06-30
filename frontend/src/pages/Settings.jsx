@@ -3,14 +3,19 @@ import { useSearchParams } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { LogOut, HardDrive, CheckCircle2, Plug, Loader2 } from "lucide-react";
+import { LogOut, HardDrive, Youtube, CheckCircle2, Plug, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import Layout from "@/components/Layout";
+
+const processedDriveParams = new Set();
+const processedYoutubeParams = new Set();
 
 export default function Settings() {
   const { user, logout } = useAuth();
   const [drive, setDrive] = useState(null);
   const [driveLoading, setDriveLoading] = useState(true);
+  const [youtube, setYoutube] = useState(null);
+  const [youtubeLoading, setYoutubeLoading] = useState(true);
   const [search, setSearch] = useSearchParams();
 
   const loadDrive = () => {
@@ -21,11 +26,22 @@ export default function Settings() {
       setDriveLoading(false);
     });
   };
-  useEffect(() => { loadDrive(); }, []);
+  const loadYoutube = () => {
+    setYoutubeLoading(true);
+    return api.get("/youtube/status").then(r => {
+      setYoutube(r.data?.data);
+    }).finally(() => {
+      setYoutubeLoading(false);
+    });
+  };
+  useEffect(() => { loadDrive(); loadYoutube(); }, []);
 
   useEffect(() => {
     const status = search.get("drive");
     if (!status) return;
+    const key = `drive-${status}`;
+    if (processedDriveParams.has(key)) return;
+    processedDriveParams.add(key);
     Promise.resolve().then(() => {
       if (status === "connected") {
         toast.success("Google Drive connected — your existing GATEPREP files will reappear on the Resources page");
@@ -34,6 +50,24 @@ export default function Settings() {
         toast.error("Google Drive connection failed");
       }
       search.delete("drive");
+      setSearch(search, { replace: true });
+    });
+  }, [search, setSearch]);
+
+  useEffect(() => {
+    const status = search.get("youtube");
+    if (!status) return;
+    const key = `youtube-${status}`;
+    if (processedYoutubeParams.has(key)) return;
+    processedYoutubeParams.add(key);
+    Promise.resolve().then(() => {
+      if (status === "connected") {
+        toast.success("YouTube connected — you can now import your playlists");
+        loadYoutube();
+      } else if (status === "error") {
+        toast.error("YouTube connection failed");
+      }
+      search.delete("youtube");
       setSearch(search, { replace: true });
     });
   }, [search, setSearch]);
@@ -53,6 +87,24 @@ export default function Settings() {
       await api.post("/drive/disconnect");
       toast.success("Disconnected");
       loadDrive();
+    } catch { toast.error("Disconnect failed"); }
+  };
+
+  const connectYoutube = async () => {
+    try {
+      const r = await api.get("/youtube/auth");
+      window.location.href = r.data?.data?.authorization_url;
+    } catch {
+      toast.error("Failed to start YouTube connection");
+    }
+  };
+
+  const disconnectYoutube = async () => {
+    if (!window.confirm("Disconnect YouTube? Playlist imports will stop working.")) return;
+    try {
+      await api.post("/youtube/disconnect");
+      toast.success("YouTube disconnected");
+      loadYoutube();
     } catch { toast.error("Disconnect failed"); }
   };
 
@@ -84,11 +136,7 @@ export default function Settings() {
                 <h2 className="text-base font-semibold">Google Drive</h2>
                 {drive?.connected && <CheckCircle2 className="w-4 h-4 text-emerald-500" />}
               </div>
-              <p className="text-xs text-muted-foreground mt-2 max-w-md">
-                Resource files (PDFs, notes, formula sheets) get uploaded to a <code className="mono">GATEPREP/</code> folder
-                inside <em>your</em> Drive. Scope <code className="mono">drive.file</code> — we cannot see any of your other files.
-                You can re-import existing files anytime from the <strong>Resources</strong> page using the “Sync from Drive” button.
-              </p>
+              <p className="text-xs text-muted-foreground mt-1">Connect Drive to manage resources</p>
             </div>
             {driveLoading ? (
               <Button variant="outline" size="sm" disabled data-testid="drive-loading-btn">
@@ -104,12 +152,33 @@ export default function Settings() {
               </Button>
             )}
           </div>
-          {drive?.connected && (
-            <div className="text-xs mono border-l-2 border-emerald-500 pl-3 py-1 bg-emerald-500/5">
-              Connected as <span className="text-foreground">{drive.drive_email || "your Google account"}</span>
-              {drive.connected_at && <span className="text-muted-foreground"> · since {new Date(drive.connected_at).toLocaleDateString()}</span>}
+        </div>
+
+        <div className="border border-border rounded-lg p-5 space-y-4" data-testid="youtube-section">
+          <div className="flex items-start justify-between">
+            <div>
+              <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Media</div>
+              <div className="flex items-center gap-2 mt-1">
+                <Youtube className="w-4 h-4" />
+                <h2 className="text-base font-semibold">YouTube</h2>
+                {youtube?.connected && <CheckCircle2 className="w-4 h-4 text-emerald-500" />}
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">Connect YT to import playlists</p>
             </div>
-          )}
+            {youtubeLoading ? (
+              <Button variant="outline" size="sm" disabled data-testid="youtube-loading-btn">
+                <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> Loading…
+              </Button>
+            ) : youtube?.connected ? (
+              <Button variant="outline" size="sm" onClick={disconnectYoutube} data-testid="youtube-disconnect-btn">
+                Disconnect
+              </Button>
+            ) : (
+              <Button size="sm" onClick={connectYoutube} data-testid="youtube-connect-btn">
+                <Plug className="w-3.5 h-3.5 mr-1" /> Connect YouTube
+              </Button>
+            )}
+          </div>
         </div>
 
         <div className="border border-border rounded-lg p-5">

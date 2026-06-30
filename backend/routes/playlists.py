@@ -4,7 +4,8 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends
 
-from shared import YOUTUBE_API_KEY, async_get, db, err, get_current_user, iso, logger, new_id, now_utc, ok
+from shared import async_get, db, err, get_current_user, iso, logger, new_id, now_utc, ok
+from routes.youtube import _get_youtube_token
 
 router = APIRouter()
 
@@ -26,10 +27,11 @@ def _iso8601_to_seconds(d: str) -> int:
     return (int(days or 0))*86400 + (int(h or 0))*3600 + (int(mi or 0))*60 + int(s or 0)
 
 
-async def _yt_fetch_playlist_meta(pid: str) -> Optional[Dict[str, Any]]:
+async def _yt_fetch_playlist_meta(pid: str, token: str) -> Optional[Dict[str, Any]]:
     resp = await async_get(
         f"{YT_BASE}/playlists",
-        params={"part": "snippet,contentDetails", "id": pid, "key": YOUTUBE_API_KEY},
+        params={"part": "snippet,contentDetails", "id": pid},
+        headers={"Authorization": f"Bearer {token}"},
         timeout=15,
     )
     r = resp.json()
@@ -39,14 +41,19 @@ async def _yt_fetch_playlist_meta(pid: str) -> Optional[Dict[str, Any]]:
     return {"snippet": items[0]["snippet"], "item_count": items[0]["contentDetails"]["itemCount"]}
 
 
-async def _yt_fetch_playlist_items(pid: str) -> List[Dict[str, Any]]:
+async def _yt_fetch_playlist_items(pid: str, token: str) -> List[Dict[str, Any]]:
     videos: List[Dict[str, Any]] = []
     page_token: Optional[str] = None
     while True:
-        params: Dict[str, Any] = {"part": "snippet,contentDetails", "playlistId": pid, "maxResults": 50, "key": YOUTUBE_API_KEY}
+        params: Dict[str, Any] = {"part": "snippet,contentDetails", "playlistId": pid, "maxResults": 50}
         if page_token:
             params["pageToken"] = page_token
-        resp = await async_get(f"{YT_BASE}/playlistItems", params=params, timeout=15)
+        resp = await async_get(
+            f"{YT_BASE}/playlistItems",
+            params=params,
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=15,
+        )
         page = resp.json()
         for it in page.get("items", []):
             videos.append({
@@ -59,13 +66,14 @@ async def _yt_fetch_playlist_items(pid: str) -> List[Dict[str, Any]]:
             return videos
 
 
-async def _yt_fetch_video_durations(video_ids: List[str]) -> Dict[str, int]:
+async def _yt_fetch_video_durations(video_ids: List[str], token: str) -> Dict[str, int]:
     out: Dict[str, int] = {}
     for i in range(0, len(video_ids), 50):
         chunk = video_ids[i:i + 50]
         resp = await async_get(
             f"{YT_BASE}/videos",
-            params={"part": "contentDetails", "id": ",".join(chunk), "key": YOUTUBE_API_KEY},
+            params={"part": "contentDetails", "id": ",".join(chunk)},
+            headers={"Authorization": f"Bearer {token}"},
             timeout=15,
         )
         rv = resp.json()
@@ -111,17 +119,18 @@ async def import_playlist(body: PlaylistImportIn, user=Depends(get_current_user)
     pid = _extract_playlist_id(body.youtube_url)
     if not pid:
         return err("invalid_url", "Invalid YouTube playlist URL", 400)
-    if not YOUTUBE_API_KEY:
-        return err("config", "YOUTUBE_API_KEY not configured", 500)
+    token = await _get_youtube_token(user["user_id"])
+    if not token:
+        return err("youtube_not_connected", "Connect YouTube in Settings first", 400)
     existing = await db.playlists.find_one({"user_id": user["user_id"], "youtube_playlist_id": pid}, {"_id": 0})
     if existing:
         return ok(existing)
     try:
-        meta = await _yt_fetch_playlist_meta(pid)
+        meta = await _yt_fetch_playlist_meta(pid, token)
         if not meta:
             return err("not_found", "Playlist not found on YouTube", 404)
-        videos = await _yt_fetch_playlist_items(pid)
-        durations = await _yt_fetch_video_durations([v["youtube_video_id"] for v in videos])
+        videos = await _yt_fetch_playlist_items(pid, token)
+        durations = await _yt_fetch_video_durations([v["youtube_video_id"] for v in videos], token)
     except Exception as e:
         logger.error(f"yt error: {e}")
         return err("youtube_error", str(e), 502)

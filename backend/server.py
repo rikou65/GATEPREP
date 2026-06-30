@@ -16,6 +16,7 @@ from routes.practice import router as practice_router
 from routes.playlists import router as playlists_router
 from routes.resources import router as resources_router
 from routes.admin_staging import router as admin_staging_router
+from routes.youtube import router as youtube_router
 from shared import settings
 
 app = FastAPI(title="GATEPREP")
@@ -32,6 +33,7 @@ api.include_router(practice_router)
 api.include_router(playlists_router)
 api.include_router(resources_router)
 api.include_router(admin_staging_router, prefix="/data")
+api.include_router(youtube_router)
 
 # basic health endpoints
 @api.get("/")

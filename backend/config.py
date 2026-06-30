@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     GOOGLE_DRIVE_CLIENT_SECRET: Optional[str] = ""
     GOOGLE_LOGIN_REDIRECT_URI: Optional[str] = ""
     GOOGLE_DRIVE_REDIRECT_URI: Optional[str] = ""
+    GOOGLE_YOUTUBE_REDIRECT_URI: Optional[str] = ""
 
     FRONTEND_URL: Optional[str] = ""
     MISTRAL_API_KEY: Optional[str] = ""

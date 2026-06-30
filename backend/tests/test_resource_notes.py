@@ -42,8 +42,8 @@ def secondary_headers() -> Dict[str, str]:
 
 
 @pytest.fixture(scope="session")
-def subjects() -> List[Dict[str, Any]]:
-    r = requests.get(f"{API}/subjects")
+def subjects(primary_headers: Dict[str, str]) -> List[Dict[str, Any]]:
+    r = requests.get(f"{API}/subjects", headers=primary_headers)
     assert r.status_code == 200
     return r.json()["data"]
 
@@ -368,7 +368,7 @@ class TestPhaseARegression:
         self, primary_headers: Dict[str, str], subjects: List[Dict[str, Any]]
     ) -> None:
         sid = subjects[0]["subject_id"]
-        t = requests.get(f"{API}/subjects/{sid}/topics").json()["data"][0]
+        t = requests.get(f"{API}/subjects/{sid}/topics", headers=primary_headers).json()["data"][0]
         payload = {
             "subject_id": sid,
             "topic_id": t["topic_id"],
