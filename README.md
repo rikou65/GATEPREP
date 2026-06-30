@@ -1,4 +1,4 @@
-# GATE Study OS
+# GATEPREP
 
 > A high-performance, multi-tenant **Study Operating System** purpose-built for GATE Computer Science (CSE) preparation — Question Banks, PYQs, Mistake Lab, YouTube playlist tracking, PDF OCR ingestion, and a personal Google-Drive backed resource library, all wired to the official GATE CSE syllabus.
 
@@ -33,7 +33,7 @@
 
 ## Why this project
 
-Most GATE prep platforms are content silos — they sell you their PDFs, their videos, their question banks. **GATE Study OS** flips that model on its head: it's an *operating system* you bring your own content to.
+Most GATE prep platforms are content silos — they sell you their PDFs, their videos, their question banks. **GATEPREP** flips that model on its head: it's a *personal study platform* you bring your own content to.
 
 - **Your PYQs and questions** live in *your* topic taxonomy.
 - **Your resources** (notes, books, cheat sheets) live in *your* Google Drive — we never hold them.
@@ -283,7 +283,7 @@ npm start        # Runs on http://localhost:3000
 | Variable | Description |
 |---|---|
 | `MONGO_URL` | MongoDB connection string |
-| `DB_NAME` | Database name (e.g. `gate_study_os`) |
+| `DB_NAME` | Database name (e.g. `gateprep`) |
 | `JWT_SECRET` | Random string for signing sessions |
 | `GOOGLE_DRIVE_CLIENT_ID` | Google OAuth client ID |
 | `GOOGLE_DRIVE_CLIENT_SECRET` | Google OAuth client secret |
@@ -363,7 +363,7 @@ npm start        # Runs on http://localhost:3000
 1. **DB-Level Aggregation:** We use MongoDB `$lookup` and `$group` for all analytics. This ensures the app stays "instant" even with 5,000+ questions.
 2. **Manual OAuth:** We bypass standard libraries for token exchange to avoid PKCE/Verifier conflicts between frontend and backend.
 3. **Canvas PDF Engine:** Custom rendering via `pdfjs-dist` ensures the reader works in privacy-hardened browsers.
-4. **Admin Role Retired:** To fulfill the "Personal Study OS" vision, every user has full authority over their own data.
+4. **Admin Role Retired:** To fulfill the personal study platform vision, every user has full authority over their own data.
 5. **No `difficulty` field:** Difficulty is subjective and varies by student background. It is intentionally absent from the data model. Users can tag difficulty themselves via the `tags` array if needed.
 6. **OCR reads env directly:** `mistral_ocr.py` reads `MISTRAL_API_KEY` via `os.environ.get()` instead of the Pydantic `settings` object. This is deliberate — background tasks spawned by FastAPI's `BackgroundTasks` run in a worker context where the `settings` singleton may not be fully initialized, causing `NameError`. Reading env directly is safe and deterministic.
 7. **ID normalization in OCR:** A GATE study PDF typically has questions numbered `Q.1`–`Q.65` in one section and solutions numbered `1`–`65` in another. Without normalization these are treated as 130 separate records. `normalize_id()` strips the `Q.` prefix so both always resolve to the same staging document.

@@ -1,4 +1,4 @@
-# PDF + OCR Ingestion Pipeline — Technical Reference
+# GATEPREP — PDF + OCR Ingestion Pipeline
 
 **Status:** Phase 5 core complete. Image extraction (Phase 5 continued) is the active next step.
 **Last updated:** June 2026

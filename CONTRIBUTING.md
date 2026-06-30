@@ -1,4 +1,4 @@
-# Contributing to GATE Study OS
+# Contributing to GATEPREP
 
 First off — thanks for taking the time to contribute. This project is opinionated about a few things and relaxed about most. This document tells you which is which.
 

@@ -1,4 +1,4 @@
-# GATE Study OS — Product Requirements Doc
+# GATEPREP — Product Requirements Doc
 
 **Last updated:** June 2026
 **Status:** Phase 5 (OCR Pipeline) core complete. Active priorities: OCR image extraction, Vite migration.

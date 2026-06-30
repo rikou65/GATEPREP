@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 from typing import Any, Dict, List, Optional
-import asyncio
 
 import httpx
 from fastapi import APIRouter, Depends, BackgroundTasks, UploadFile, File, Form
@@ -11,74 +9,21 @@ from pydantic import BaseModel
 
 from shared import db, err, get_current_user, ok, new_id, iso, now_utc, logger
 
-# Import the orchestrator and local parser. Ensure paths match
+# Import the Mistral OCR pipeline
 import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-try:
-    from scripts.import_go_pdfs import PDFOrchestrator
-except ImportError as e:
-    logger.error(f"Failed to import PDFOrchestrator: {e}")
-    PDFOrchestrator = None
-
-try:
-    from scripts.parse_llama import parse_with_llama
-except ImportError as e:
-    logger.error(f"Failed to import parse_with_llama: {e}")
-    parse_with_llama = None
-
-try:
-    from scripts.mistral_ocr import MistralOCRPipeline
-except ImportError as e:
-    logger.error(f"Failed to import MistralOCRPipeline: {e}")
-    MistralOCRPipeline = None
+from scripts.mistral_ocr import MistralOCRPipeline
 
 router = APIRouter()
 
 async def run_mistral_ocr_background(job_id: str, file_path: str, subject_id: str, source: str = ""):
     """Background task to run the Mistral OCR pipeline."""
     try:
-        if MistralOCRPipeline:
-            pipeline = MistralOCRPipeline(file_path, subject_id, job_id=job_id, source=source)
-            await pipeline.process_pdf()
-            await db.import_jobs.update_one({"job_id": job_id}, {"$set": {"status": "COMPLETED", "completed_at": iso(now_utc())}})
-        else:
-            raise RuntimeError("MistralOCRPipeline is not available.")
+        pipeline = MistralOCRPipeline(file_path, subject_id, job_id=job_id, source=source)
+        await pipeline.process_pdf()
+        await db.import_jobs.update_one({"job_id": job_id}, {"$set": {"status": "COMPLETED", "completed_at": iso(now_utc())}})
     except Exception as e:
         logger.error(f"Mistral OCR pipeline failed for job {job_id}: {e}")
-        await db.import_jobs.update_one({"job_id": job_id}, {"$set": {"status": "FAILED", "error": str(e)}})
-    finally:
-        if os.path.exists(file_path):
-            try: os.remove(file_path)
-            except: pass
-
-
-async def run_llama_parser_background(job_id: str, file_path: str, subject_id: str):
-    """Background task to run the LlamaParse + PyMuPDF Hybrid parser."""
-    try:
-        if parse_with_llama:
-            await parse_with_llama(file_path, subject_id, job_id=job_id)
-        else:
-            raise RuntimeError("Llama parser is not available.")
-    except Exception as e:
-        logger.error(f"Llama Parse failed for job {job_id}: {e}")
-        await db.import_jobs.update_one({"job_id": job_id}, {"$set": {"status": "FAILED", "error": str(e)}})
-    finally:
-        if os.path.exists(file_path):
-            try: os.remove(file_path)
-            except: pass
-
-async def run_ocr_pipeline_background(job_id: str, file_path: str, subject_id: str):
-    """Background task to run the OCR pipeline and update job progress."""
-    try:
-        if PDFOrchestrator:
-            orchestrator = PDFOrchestrator(file_path, subject_id, job_id=job_id)
-            await orchestrator.process_pdf()
-            # Double check status at the end
-            await db.import_jobs.update_one({"job_id": job_id}, {"$set": {"status": "COMPLETED", "completed_at": iso(now_utc())}})
-        else:
-            raise RuntimeError("PDFOrchestrator is not available.")
-    except Exception as e:
-        logger.error(f"OCR Pipeline failed for job {job_id}: {e}")
         await db.import_jobs.update_one({"job_id": job_id}, {"$set": {"status": "FAILED", "error": str(e)}})
     finally:
         if os.path.exists(file_path):
@@ -184,7 +129,6 @@ async def approve_specific_item(
         "options": item.get("options", []),
         "correct_answer": item.get("correct_answer"),
         "solution": item.get("solution_text"),
-        "difficulty": "",
         "source": item.get("source", ""),
         "tags": ([item["topic"]] if item.get("topic") else []),
         "created_at": iso(now_utc()),
@@ -234,7 +178,6 @@ async def bulk_approve_staging_items(user=Depends(get_current_user)):
             "options": item["options"],
             "correct_answer": item["correct_answer"],
             "solution": item["solution_text"],
-            "difficulty": "",
             "source": item.get("source", ""),
             "tags": ([item["topic"]] if item.get("topic") else []),
             "created_at": iso(now_utc()),

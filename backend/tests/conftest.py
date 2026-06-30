@@ -40,10 +40,10 @@ async def seed_test_users():
     
     # Define roles and users
     users = [
-        {"user_id": "test_admin_user", "email": "admin@example.com", "name": "Test Admin", "is_admin": True},
-        {"user_id": "test_normal_user", "email": "user@example.com", "name": "Test User", "is_admin": False},
-        {"user_id": "test_primary_user", "email": "primary@example.com", "name": "Test Primary User", "is_admin": False},
-        {"user_id": "test_secondary_user", "email": "secondary@example.com", "name": "Test Secondary User", "is_admin": False},
+        {"user_id": "test_admin_user", "email": "admin@example.com", "name": "Test Admin"},
+        {"user_id": "test_normal_user", "email": "user@example.com", "name": "Test User"},
+        {"user_id": "test_primary_user", "email": "primary@example.com", "name": "Test Primary User"},
+        {"user_id": "test_secondary_user", "email": "secondary@example.com", "name": "Test Secondary User"},
     ]
     
     # Define sessions
@@ -58,10 +58,9 @@ async def seed_test_users():
     for user in users:
         await db.users.update_one(
             {"user_id": user["user_id"]},
-            {"$set": {
+            {            "$set": {
                 "email": user["email"],
                 "name": user["name"],
-                "is_admin": user["is_admin"],
                 "updated_at": datetime.now(timezone.utc).isoformat()
             }, "$setOnInsert": {"created_at": datetime.now(timezone.utc).isoformat()}},
             upsert=True

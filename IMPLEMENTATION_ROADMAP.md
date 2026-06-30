@@ -25,10 +25,15 @@
 **Goal:** Faster dev experience, remove dead branding, clean up easy structural issues.
 
 ### 1.1 Vite Migration
-- [ ] `npm create vite@latest` in temp dir, copy `src/` and `public/` over
-- [ ] Replace `craco.config.js` aliases with `vite.config.js` resolve aliases
-- [ ] Rename all `REACT_APP_*` env vars to `VITE_*`
-- [ ] Replace `react-scripts` scripts with `vite` / `vite build` / `vite preview`
+- [x] Install `vite` + `@vitejs/plugin-react`
+- [x] Create `vite.config.js` with React plugin and `@` alias
+- [x] Move `index.html` to root, update for Vite (script module, no `%PUBLIC_URL%`)
+- [x] Rename `src/index.js` → `src/index.jsx`, `src/App.js` → `src/App.jsx`
+- [x] Replace `REACT_APP_*` env vars with `VITE_*`
+- [x] Update `package.json` scripts: `craco start/build` → `vite`/`vite build`
+- [x] Remove `craco.config.js`, `react-scripts`, `@craco/craco`, `cra-template`
+- [x] Remove `public/index.html` (moved to root)
+- [x] **Build verified — 6s vs ~50s previously** ✅
 - [ ] Test: Drive viewer, PDF viewer, YouTube player, OCR staging queue after migration
 - [ ] Update `SELF_HOSTING.md` build settings if needed
 

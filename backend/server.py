@@ -1,4 +1,4 @@
-"""GATE Study OS - FastAPI backend (MongoDB)."""
+"""GATEPREP - FastAPI backend (MongoDB)."""
 from fastapi import FastAPI, APIRouter
 from starlette.middleware.cors import CORSMiddleware
 
@@ -6,7 +6,8 @@ from shared import client, db, logger, ok
 from seed import seed_data
 from migrations import _migrate_v2_split_subjects, _migrate_per_user_content, _ensure_flag_indexes
 
-from routes.core import router as core_router
+from routes.auth import router as auth_router
+from routes.subjects import router as subjects_router
 from routes.analytics import router as analytics_router
 from routes.practice import router as practice_router
 from routes.playlists import router as playlists_router
@@ -17,12 +18,13 @@ app = FastAPI(title="GATEPREP")
 api = APIRouter(prefix="/api")
 
 # mount extracted routes
-api.include_router(core_router)
+api.include_router(auth_router)
+api.include_router(subjects_router)
 api.include_router(analytics_router)
 api.include_router(practice_router)
 api.include_router(playlists_router)
 api.include_router(resources_router)
-api.include_router(admin_staging_router, prefix="/admin")
+api.include_router(admin_staging_router, prefix="/data")
 
 # basic health endpoints
 @api.get("/")

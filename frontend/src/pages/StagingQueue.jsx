@@ -24,7 +24,7 @@ export default function StagingQueue() {
 
   const fetchStaging = async () => {
     try {
-      const res = await api.get("/admin/staging");
+      const res = await api.get("/data/staging");
       setItems(res.data?.data || []);
     } catch (e) {
       console.error(e);
@@ -35,7 +35,7 @@ export default function StagingQueue() {
 
   const fetchJobs = async () => {
     try {
-      const res = await api.get("/admin/import/jobs");
+      const res = await api.get("/data/import/jobs");
       const jobsData = res.data?.data || [];
       setJobs(jobsData);
       
@@ -93,7 +93,7 @@ export default function StagingQueue() {
     if (!window.confirm(`This will permanently delete ALL ${items.length} staging items. Are you sure?`)) return;
     setProcessing(true);
     try {
-      await api.delete("/admin/staging");
+      await api.delete("/data/staging");
       setItems([]);
       toast.success("Staging queue cleared");
     } catch (e) {

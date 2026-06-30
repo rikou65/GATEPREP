@@ -377,7 +377,7 @@ class TestPhaseARegression:
             "options": ["3", "4", "5", "6"],
             "correct_answer": "1",
             "solution": "Basic math",
-            "difficulty": "Easy",
+           
         }
         rc = requests.post(f"{API}/questions", headers=primary_headers, json=payload)
         assert rc.status_code == 200, rc.text

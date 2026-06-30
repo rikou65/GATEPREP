@@ -1,6 +1,6 @@
-# GATE Study OS — Implementation Plan
+# GATEPREP — Implementation Plan
 
-> A pragmatic, sequenced engineering plan for the "Personal Study OS" phase. Re-prioritise at the start of each week.
+> A pragmatic, sequenced engineering plan for GATEPREP. Re-prioritise at the start of each week.
 
 ---
 
@@ -200,5 +200,5 @@
 ---
 
 <p align="center">
-  <em>Last updated: June 2026. Phase 5 core complete. Phase 5 continued (images) and Phase 6 (Vite) are the active priorities.</em>
+  <em>Last updated: June 2026.</em>
 </p>

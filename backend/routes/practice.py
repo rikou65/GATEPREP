@@ -27,7 +27,6 @@ class QuestionIn(BaseModel):
     options: Optional[List[str]] = None
     correct_answer: Any
     solution: str
-    difficulty: str = "Medium"
     source: str = "User"
     year: Optional[int] = None
 
@@ -40,7 +39,6 @@ class QuestionPatch(BaseModel):
     options: Optional[List[str]] = None
     correct_answer: Any = None
     solution: Optional[str] = None
-    difficulty: Optional[str] = None
     source: Optional[str] = None
     year: Optional[int] = None
     gate_set: Optional[str] = None
@@ -79,18 +77,10 @@ def _is_correct(qtype: str, correct: Any, selected: Any) -> bool:
     return False
 
 
-async def get_admin_user(user=Depends(get_current_user)):
-    if not user.get("is_admin"):
-        from fastapi import HTTPException
-        raise HTTPException(status_code=403, detail="Admin access required")
-    return user
-
-
 @router.get("/questions")
 async def list_questions(
     subject_id: Optional[str] = None,
     topic_id: Optional[str] = None,
-    difficulty: Optional[str] = None,
     question_type: Optional[str] = None,
     attempted: Optional[str] = None,
     result: Optional[str] = None,
@@ -105,7 +95,6 @@ async def list_questions(
     match_q: Dict[str, Any] = {"user_id": uid}
     if subject_id: match_q["subject_id"] = subject_id
     if topic_id: match_q["topic_id"] = topic_id
-    if difficulty: match_q["difficulty"] = difficulty
     if question_type: match_q["question_type"] = question_type
 
     # 2. Build Pipeline
@@ -568,32 +557,6 @@ async def unflag_pyq(pyq_id: str, flag_type: str, user=Depends(get_current_user)
         {"user_id": user["user_id"], "pyq_id": pyq_id}, {"_id": 0, "flag_type": 1}
     ).to_list(10)
     return ok({"flags": [f["flag_type"] for f in flags]})
-
-
-@router.post("/admin/questions")
-async def admin_create_question(body: QuestionIn, user=Depends(get_admin_user)):
-    return await create_question(body, user)
-
-
-@router.delete("/admin/questions/{question_id}")
-async def admin_delete_question(question_id: str, user=Depends(get_admin_user)):
-    return await delete_question(question_id, user)
-
-
-@router.post("/admin/pyqs")
-async def admin_create_pyq(body: PYQIn, user=Depends(get_admin_user)):
-    return await create_pyq(body, user)
-
-
-@router.delete("/admin/pyqs/{pyq_id}")
-async def admin_delete_pyq(pyq_id: str, user=Depends(get_admin_user)):
-    return await delete_pyq(pyq_id, user)
-
-
-@router.get("/admin/users")
-async def admin_users(user=Depends(get_admin_user)):
-    docs = await db.users.find({}, {"_id": 0}).to_list(10000)
-    return ok(docs)
 
 
 @router.post("/pyqs/{pyq_id}/attempt")

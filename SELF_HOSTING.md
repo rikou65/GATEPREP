@@ -1,6 +1,6 @@
-# Self-Hosting GATE Study OS for free (or near-free)
+# Self-Hosting GATEPREP for free (or near-free)
 
-This guide gets your personal GATE Study OS running on a **free-tier stack** with **persistent data** that survives restarts — solving the ephemeral-DB problem you hit on the development environment.
+This guide gets your personal GATEPREP instance running on a **free-tier stack** with **persistent data** that survives restarts — solving the ephemeral-DB problem you hit on the development environment.
 
 **Total cost**: $0/month for typical personal use (within free-tier limits).
 **Total time**: ~30 minutes if you already have Google accounts ready.
@@ -33,7 +33,7 @@ Make sure the repo contains the new config files we just generated:
 ## Step 1 — Create the MongoDB Atlas cluster (5 min)
 
 1. Sign up at https://www.mongodb.com/cloud/atlas/register (use the same Google account you're already using).
-2. Create a new project: **"gate-study-os"**.
+2. Create a new project: **"gateprep"**.
 3. **Build a Database** → choose **M0 (Free)** → AWS, pick the region closest to you.
 4. Cluster name: **`gate-os`**.
 5. **Database Access** (left sidebar):
@@ -46,7 +46,7 @@ Make sure the repo contains the new config files we just generated:
    mongodb+srv://gateuser:<password>@gate-os.xxxxx.mongodb.net/?retryWrites=true&w=majority
    ```
    Replace `<password>` with the one you generated. **Save this string — it's your `MONGO_URL`.**
-8. Pick a DB name: **`gate_study_os`** (this becomes your `DB_NAME`).
+8. Pick a DB name: **`gateprep`** (this becomes your `DB_NAME`).
 
 ---
 
@@ -60,7 +60,7 @@ Make sure the repo contains the new config files we just generated:
    | Key | Value |
    |---|---|
    | `MONGO_URL` | the Atlas connection string from Step 1.7 |
-   | `DB_NAME` | `gate_study_os` |
+   | `DB_NAME` | `gateprep` |
    | `JWT_SECRET` | run `openssl rand -hex 32` locally, paste output |
    | `GOOGLE_DRIVE_CLIENT_ID` | from your Google Cloud Console OAuth client |
    | `GOOGLE_DRIVE_CLIENT_SECRET` | same |
@@ -94,7 +94,7 @@ Make sure the repo contains the new config files we just generated:
 
    > **After Vite migration** (see `IMPLEMENTATION_PLAN.md` Phase 6): the env key changes to `VITE_BACKEND_URL` and the build output directory changes from `build/` to `dist/`. Update Vercel's Output Directory setting accordingly at that time.
 
-4. **Deploy**. ~2 minutes later you have `https://gate-study-os-yourname.vercel.app`.
+4. **Deploy**. ~2 minutes later you have `https://gateprep-yourname.vercel.app`.
 5. **Go back to Render** → update the `FRONTEND_URL` env var to this Vercel URL → redeploy.
 6. **Google Cloud Console** → Authorized redirect URIs on the Google OAuth login client (if separate) → add the Vercel host.
 

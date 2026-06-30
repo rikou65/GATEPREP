@@ -39,8 +39,8 @@ function AppRouter() {
       <Route path="/resources" element={<ProtectedRoute><Resources /></ProtectedRoute>} />
       <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
       <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
-      <Route path="/admin/staging" element={<ProtectedRoute><StagingQueue /></ProtectedRoute>} />
-      <Route path="/admin/import" element={<ProtectedRoute><ImportPDF /></ProtectedRoute>} />
+      <Route path="/data/staging" element={<ProtectedRoute><StagingQueue /></ProtectedRoute>} />
+      <Route path="/data/import" element={<ProtectedRoute><ImportPDF /></ProtectedRoute>} />
     </Routes>
   );
 }

@@ -48,7 +48,7 @@ export default function ImportPDF() {
         formData.append("url", url);
       }
 
-      await api.post("/admin/import/pdf", formData, {
+      await api.post("/data/import/pdf", formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });
       

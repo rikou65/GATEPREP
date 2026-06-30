@@ -20,8 +20,8 @@ const NAV = [
 ];
 
 const ADMIN_NAV = [
-  { to: "/admin/import", label: "Import PDF", icon: UploadCloud, id: "nav-import" },
-  { to: "/admin/staging", label: "Staging Queue", icon: ListChecks, id: "nav-staging" },
+  { to: "/data/import", label: "Import PDF", icon: UploadCloud, id: "nav-import" },
+  { to: "/data/staging", label: "Staging Queue", icon: ListChecks, id: "nav-staging" },
 ];
 
 export default function Layout({ children, title, hideSidebar = false }) {
