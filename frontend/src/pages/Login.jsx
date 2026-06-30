@@ -51,12 +51,12 @@ export default function Login() {
             <div>
               <div className="inline-flex items-center gap-2 px-3 py-1 border border-border rounded-full text-xs mono text-muted-foreground mb-6">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                Operating system · not a coaching platform
+                Personal study platform · not a coaching platform
               </div>
               <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight leading-[1.05]">
                 Your personal
                 <br />
-                <span className="text-muted-foreground">study operating system</span>
+                <span className="text-muted-foreground">GATEPREP dashboard</span>
                 <br />
                 for GATE.
               </h1>
