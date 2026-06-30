@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+import asyncio
 import io
 import re
+import time
 import urllib.parse
 from datetime import datetime, timezone, timedelta
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, Query, Response, UploadFile, Request
-from fastapi.responses import RedirectResponse, StreamingResponse
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 import httpx
 from google.auth.transport.requests import Request as GoogleRequest
@@ -49,18 +52,32 @@ def _drive_client_config() -> Dict[str, Any]:
 
 
 
+_drive_creds_cache: Dict[str, Credentials] = {}
+
 async def _get_drive_creds(user_id: str):
+    start = time.perf_counter()
+    cached = _drive_creds_cache.get(user_id)
+    # Use cached credentials only while Google's token is still valid.
+    if cached and cached.valid:
+        logger.info(f"[_get_drive_creds] {user_id}: cache_hit valid total={time.perf_counter()-start:.3f}s")
+        return cached
+
     doc = await db.drive_credentials.find_one({"user_id": user_id}, {"_id": 0})
     if not doc:
+        _drive_creds_cache.pop(user_id, None)
+        logger.info(f"[_get_drive_creds] {user_id}: no_credentials total={time.perf_counter()-start:.3f}s")
         return None
+
     expiry = None
     if doc.get("expiry"):
         try:
             expiry = datetime.fromisoformat(doc["expiry"])
-            if expiry.tzinfo is None:
-                expiry = expiry.replace(tzinfo=timezone.utc)
+            # google.auth compares expiry with a naive utcnow(), so store as naive UTC.
+            if expiry.tzinfo:
+                expiry = expiry.astimezone(timezone.utc).replace(tzinfo=None)
         except Exception:
             expiry = None
+
     creds = Credentials(
         token=doc.get("access_token"),
         refresh_token=doc.get("refresh_token"),
@@ -68,12 +85,15 @@ async def _get_drive_creds(user_id: str):
         client_id=settings.GOOGLE_DRIVE_CLIENT_ID,
         client_secret=settings.GOOGLE_DRIVE_CLIENT_SECRET,
         scopes=doc.get("scopes") or DRIVE_SCOPES,
-        expiry=expiry.replace(tzinfo=None) if expiry else None,
+        expiry=expiry,
     )
 
     if not creds.valid and creds.refresh_token:
+        refresh_start = time.perf_counter()
         try:
-            creds.refresh(GoogleRequest())
+            loop = asyncio.get_event_loop()
+            with ThreadPoolExecutor() as pool:
+                await loop.run_in_executor(pool, lambda: creds.refresh(GoogleRequest()))
             new_expiry = creds.expiry.replace(tzinfo=timezone.utc) if creds.expiry else None
             await db.drive_credentials.update_one(
                 {"user_id": user_id},
@@ -83,11 +103,16 @@ async def _get_drive_creds(user_id: str):
                     "updated_at": iso(now_utc()),
                 }},
             )
-            return creds
+            logger.info(f"[_get_drive_creds] {user_id}: token_refreshed refresh_time={time.perf_counter()-refresh_start:.3f}s total={time.perf_counter()-start:.3f}s")
         except Exception as e:
             logger.warning(f"Drive token refresh failed for {user_id}: {e}")
             await db.drive_credentials.delete_one({"user_id": user_id})
+            _drive_creds_cache.pop(user_id, None)
+            logger.info(f"[_get_drive_creds] {user_id}: refresh_failed total={time.perf_counter()-start:.3f}s")
             return None
+
+    _drive_creds_cache[user_id] = creds
+    logger.info(f"[_get_drive_creds] {user_id}: loaded_valid total={time.perf_counter()-start:.3f}s")
     return creds
 
 
@@ -296,7 +321,8 @@ async def drive_callback(code: str = Query(...), state: str = Query(...)):
             {"$set": set_data, "$setOnInsert": {"connected_at": iso(now_utc())}},
             upsert=True,
         )
-        
+        _drive_creds_cache.pop(state, None)
+
         # 4. Trigger auto-sync
         try:
             sync_result = await _sync_drive_to_resources(state)
@@ -324,10 +350,29 @@ async def drive_status(user=Depends(get_current_user)):
     })
 
 
+@router.post("/drive/refresh")
+async def drive_refresh(user=Depends(get_current_user)):
+    """Refresh and cache the user's Drive access token proactively."""
+    start = time.perf_counter()
+    try:
+        creds = await _get_drive_creds(user["user_id"])
+        elapsed = time.perf_counter() - start
+        if not creds:
+            logger.info(f"[/drive/refresh] {user['user_id']}: not_connected total={elapsed:.3f}s")
+            return err("drive_not_connected", "Drive not connected", 400)
+        logger.info(f"[/drive/refresh] {user['user_id']}: ok total={elapsed:.3f}s")
+        return ok({"refreshed": True, "valid": creds.valid})
+    except Exception as e:
+        logger.error(f"Drive refresh failed for {user['user_id']}: {e}")
+        return err("drive_refresh_failed", "Failed to refresh Drive access", 500)
+
+
 @router.post("/drive/sync")
 async def drive_sync(user=Depends(get_current_user)):
+    start = time.perf_counter()
     try:
         result = await _sync_drive_to_resources(user["user_id"])
+        logger.info(f"[/drive/sync] {user['user_id']}: synced={result.get('synced')} skipped={result.get('skipped')} total={time.perf_counter()-start:.3f}s")
         return ok(result)
     except Exception as e:
         logger.error(f"drive sync failed: {e}")
@@ -348,6 +393,7 @@ async def drive_disconnect(user=Depends(get_current_user)):
         except Exception as e:
             logger.warning(f"Drive token revoke failed: {e}")
     await db.drive_credentials.delete_one({"user_id": user["user_id"]})
+    _drive_creds_cache.pop(user["user_id"], None)
     return ok({"disconnected": True})
 
 
@@ -572,6 +618,7 @@ async def resources_upload(
 
 @router.get("/resources/{resource_id}/view")
 async def resource_view(resource_id: str, request: Request, user=Depends(get_current_user)):
+    start = time.perf_counter()
     res = await db.resources.find_one({"resource_id": resource_id, "user_id": user["user_id"]}, {"_id": 0})
     if not res:
         return err("not_found", "Resource not found", 404)
@@ -586,73 +633,79 @@ async def resource_view(resource_id: str, request: Request, user=Depends(get_cur
         backend_base = str(request.base_url).rstrip("/")
         embed_url = f"{backend_base}/api/resources/{resource_id}/stream"
         web_view = res.get("external_url", "")
-        if res.get("drive_file_id"):
-            service = await _build_drive_service(user["user_id"])
-            if service:
-                try:
-                    meta = service.files().get(fileId=drive_file_id, fields="webViewLink,webContentLink,mimeType").execute()
-                    web_view = meta.get("webViewLink") or web_view
-                except Exception as e:
-                    logger.warning(f"Drive view fetch failed: {e}")
+        logger.info(f"[/resources/view] {user['user_id']} {resource_id}: total={time.perf_counter()-start:.3f}s")
         return ok({"embed_url": embed_url, "view_url": web_view, "kind": "drive"})
+    logger.info(f"[/resources/view] {user['user_id']} {resource_id}: external total={time.perf_counter()-start:.3f}s")
     return ok({"embed_url": res.get("external_url", ""), "view_url": res.get("external_url", ""), "kind": "external"})
 
 
 @router.get("/resources/{resource_id}/stream")
 async def resource_stream(resource_id: str, request: Request, user=Depends(get_current_user)):
+    start = time.perf_counter()
     res = await db.resources.find_one({"resource_id": resource_id, "user_id": user["user_id"]}, {"_id": 0})
     if not res:
         return err("not_found", "Resource not found", 404)
     drive_file_id = res.get("drive_file_id")
     if not drive_file_id:
         return err("no_drive_file", "Resource is not stored in Drive", 400)
-    
+
     creds = await _get_drive_creds(user["user_id"])
     if not creds:
         return err("drive_not_connected", "Drive not connected", 400)
-        
-    try:
-        service = build("drive", "v3", credentials=creds, cache_discovery=False)
-        meta = service.files().get(fileId=drive_file_id, fields="mimeType,name,size").execute()
-        file_size = int(meta.get("size", 0))
 
-        range_header = request.headers.get("range")
-        req_headers = {"Authorization": f"Bearer {creds.token}"}
-        if range_header:
-            req_headers["Range"] = range_header
+    mime_type = res.get("mime_type", "application/octet-stream")
+    filename = res.get("filename", "file")
 
-        drive_url = f"https://www.googleapis.com/drive/v3/files/{drive_file_id}?alt=media"
-
+    # Download the full file before responding so any Drive error can be returned
+    # with proper CORS headers instead of crashing mid-stream.
+    async def _download(token: str):
         async with httpx.AsyncClient() as client:
-            async with client.stream("GET", drive_url, headers=req_headers, timeout=None) as drive_resp:
-                drive_resp.raise_for_status()
-                resp_headers = {
-                    "Content-Disposition": f'inline; filename="{meta.get("name", "file")}"',
-                    "Accept-Ranges": "bytes",
-                    "Cache-Control": "private, max-age=300",
-                    "X-Frame-Options": "SAMEORIGIN",
-                }
-                status_code = drive_resp.status_code
-                media_type = meta.get("mimeType", "application/octet-stream")
+            r = await client.get(
+                f"https://www.googleapis.com/drive/v3/files/{drive_file_id}?alt=media",
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=None,
+            )
+            r.raise_for_status()
+            return r.content
 
-                if status_code == 206:
-                    resp_headers["Content-Range"] = drive_resp.headers.get("content-range", "")
-                    content_length = drive_resp.headers.get("content-length")
-                    if content_length:
-                        resp_headers["Content-Length"] = content_length
-                else:
-                    resp_headers["Content-Length"] = str(file_size)
-
-                async def stream_file():
-                    async for chunk in drive_resp.aiter_bytes():
-                        yield chunk
-
-                return StreamingResponse(
-                    stream_file(),
-                    status_code=status_code,
-                    media_type=media_type,
-                    headers=resp_headers,
-                )
+    try:
+        download_start = time.perf_counter()
+        content = await _download(creds.token)
+        download_time = time.perf_counter() - download_start
+        logger.info(f"[/resources/stream] {user['user_id']} {resource_id}: download={download_time:.3f}s size={len(content)} total={time.perf_counter()-start:.3f}s")
+    except httpx.HTTPStatusError as e:
+        status = e.response.status_code
+        text = e.response.text[:200]
+        logger.warning(f"Drive stream HTTP error for {resource_id}: {status} {text}")
+        if status in (401, 403):
+            # Token may be stale despite cache; refresh once and retry.
+            _drive_creds_cache.pop(user["user_id"], None)
+            try:
+                creds = await _get_drive_creds(user["user_id"])
+                if not creds:
+                    return err("drive_access_denied", "Google Drive access expired — reconnect in Settings", 401)
+                retry_start = time.perf_counter()
+                content = await _download(creds.token)
+                logger.info(f"[/resources/stream] {user['user_id']} {resource_id}: retry_after_401 download={time.perf_counter()-retry_start:.3f}s size={len(content)}")
+            except httpx.HTTPStatusError as e2:
+                logger.error(f"Drive stream retry HTTP error for {resource_id}: {e2.response.status_code}")
+                return err("drive_access_denied", "Google Drive access expired — reconnect in Settings", 401)
+            except Exception as e2:
+                logger.error(f"Drive stream retry error for {resource_id}: {e2}")
+                return err("drive_access_denied", "Google Drive access expired — reconnect in Settings", 401)
+        else:
+            return err("drive_stream_failed", f"Google Drive returned {status}", 502)
     except Exception as e:
-        logger.error(f"Drive stream failed for {resource_id}: {e}")
-        return err("stream_failed", str(e), 502)
+        logger.error(f"Drive stream error for {resource_id}: {e}")
+        return err("drive_stream_failed", "Failed to fetch file from Google Drive", 502)
+
+    return Response(
+        content=content,
+        media_type=mime_type,
+        headers={
+            "Content-Disposition": f'inline; filename="{filename}"',
+            "Content-Length": str(len(content)),
+            "Cache-Control": "private, max-age=300",
+            "X-Frame-Options": "SAMEORIGIN",
+        },
+    )

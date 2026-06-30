@@ -3,16 +3,24 @@ import { useSearchParams } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { LogOut, HardDrive, CheckCircle2, Plug } from "lucide-react";
+import { LogOut, HardDrive, CheckCircle2, Plug, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import Layout from "@/components/Layout";
 
 export default function Settings() {
   const { user, logout } = useAuth();
   const [drive, setDrive] = useState(null);
+  const [driveLoading, setDriveLoading] = useState(true);
   const [search, setSearch] = useSearchParams();
 
-  const loadDrive = () => api.get("/drive/status").then(r => setDrive(r.data?.data));
+  const loadDrive = () => {
+    setDriveLoading(true);
+    return api.get("/drive/status").then(r => {
+      setDrive(r.data?.data);
+    }).finally(() => {
+      setDriveLoading(false);
+    });
+  };
   useEffect(() => { loadDrive(); }, []);
 
   useEffect(() => {
@@ -82,7 +90,11 @@ export default function Settings() {
                 You can re-import existing files anytime from the <strong>Resources</strong> page using the “Sync from Drive” button.
               </p>
             </div>
-            {drive?.connected ? (
+            {driveLoading ? (
+              <Button variant="outline" size="sm" disabled data-testid="drive-loading-btn">
+                <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> Loading…
+              </Button>
+            ) : drive?.connected ? (
               <Button variant="outline" size="sm" onClick={disconnectDrive} data-testid="drive-disconnect-btn">
                 Disconnect
               </Button>

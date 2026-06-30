@@ -44,6 +44,7 @@ export default function AuthCallback() {
       try {
         const r = await api.post("/auth/session", { code });
         setUser(r.data?.data?.user || null);
+        localStorage.setItem("driveSyncNeeded", "true");
         window.history.replaceState({}, "", "/dashboard");
         navigate("/dashboard", { replace: true });
       } catch (e) {

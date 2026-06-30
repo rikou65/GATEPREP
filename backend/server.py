@@ -13,6 +13,7 @@ from routes.practice import router as practice_router
 from routes.playlists import router as playlists_router
 from routes.resources import router as resources_router
 from routes.admin_staging import router as admin_staging_router
+from shared import settings
 
 app = FastAPI(title="GATEPREP")
 api = APIRouter(prefix="/api")
@@ -39,11 +40,15 @@ async def health():
 app.include_router(api)
 
 # CORS middleware
+frontend_url = (settings.FRONTEND_URL or "").rstrip("/")
+allowed_origins = ["http://127.0.0.1:3000", "http://localhost:3000"]
+if frontend_url and frontend_url not in allowed_origins:
+    allowed_origins.append(frontend_url)
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
-    allow_origins=["*"],
-    allow_origin_regex=".*",
+    allow_origins=allowed_origins,
     allow_methods=["*"],
     allow_headers=["*"],
     expose_headers=["*"],

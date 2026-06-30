@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useMemo } from "react";
 import { createPortal } from "react-dom";
-import { api, API } from "@/lib/api";
+import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
@@ -37,6 +37,7 @@ export default function Resources() {
   const blobCache = useRef(new Map()); // resource_id -> Blob (cached for this session)
   const [syncing, setSyncing] = useState(false);
   const [lastSync, setLastSync] = useState(null);
+  const closingViewerRef = useRef(false);
 
   // Group resources by subject in the canonical subject order
   const groups = useMemo(() => {
@@ -82,6 +83,12 @@ export default function Resources() {
   }, [viewer]);
 
   const closeViewer = () => {
+    if (!viewer) return;
+    if (window.history.state?.viewerOpen && !closingViewerRef.current) {
+      closingViewerRef.current = true;
+      window.history.back();
+      closingViewerRef.current = false;
+    }
     if (viewer?.isBlob && viewer.embed_url) URL.revokeObjectURL(viewer.embed_url);
     setViewer(null);
     setViewerNotes({ content: "", important_pages: [] });
@@ -95,6 +102,26 @@ export default function Resources() {
     return () => window.removeEventListener("keydown", onKey);
   }, [viewer]);
 
+  // Push a history entry when the viewer opens so the browser back button
+  // closes the viewer instead of navigating to the previous page.
+  useEffect(() => {
+    if (viewer) {
+      window.history.pushState({ viewerOpen: true }, "");
+    }
+  }, [viewer]);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      if (viewer && !closingViewerRef.current) {
+        if (viewer?.isBlob && viewer.embed_url) URL.revokeObjectURL(viewer.embed_url);
+        setViewer(null);
+        setViewerNotes({ content: "", important_pages: [] });
+      }
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, [viewer]);
+
   const load = () => {
     const params = {};
     Object.entries(filter).forEach(([k, v]) => { if (v) params[k] = v; });
@@ -106,19 +133,14 @@ export default function Resources() {
       const status = r.data?.data;
       setDriveStatus(status);
       if (status?.connected) {
-        setSyncing(true);
-        api.post("/drive/sync").then(syncRes => {
-          const d = syncRes.data?.data || {};
-          setLastSync(d);
-          if (d.synced > 0) {
-            toast.success(`Restored ${d.synced} file${d.synced === 1 ? "" : "s"} from your Drive`);
-            load();
-          }
-        }).catch(err => {
-          console.error("Auto sync failed:", err);
-        }).finally(() => {
-          setSyncing(false);
-        });
+        // Refresh the Drive token silently in the background so opening PDFs is instant.
+        api.post("/drive/refresh").catch(() => {});
+
+        // Sync only on first visit after login or explicit user action.
+        if (localStorage.getItem("driveSyncNeeded") === "true") {
+          localStorage.removeItem("driveSyncNeeded");
+          runSync();
+        }
       }
     });
   }, []);
@@ -150,6 +172,7 @@ export default function Resources() {
       setUploadFile(null);
       if (fileRef.current) fileRef.current.value = "";
       load();
+      runSync();
     } catch (e) {
       toast.error(e?.response?.data?.error?.message || "Upload failed");
     }
@@ -176,28 +199,41 @@ export default function Resources() {
       }));
 
       if (data.kind === "drive") {
-        const isPdf = r.title?.toLowerCase().endsWith(".pdf") || (r.mime_type || "").includes("pdf");
-        if (isPdf) {
-          const streamUrl = `${API}/resources/${r.resource_id}/stream`;
-          setViewer({ resource_id: r.resource_id, title: r.title, streamUrl, view_url: data.view_url, isPdf: true, loading: false });
-        } else {
-          const cached = blobCache.current.get(r.resource_id);
-          if (cached) {
+        const cached = blobCache.current.get(r.resource_id);
+        if (cached) {
+          const isPdf = (cached.type || "").includes("pdf") || r.title?.toLowerCase().endsWith(".pdf");
+          if (isPdf) {
+            setViewer({ resource_id: r.resource_id, title: r.title, blob: cached, view_url: data.view_url, isPdf: true, loading: false });
+          } else {
             const blobUrl = URL.createObjectURL(cached);
             setViewer({ resource_id: r.resource_id, title: r.title, embed_url: blobUrl, view_url: data.view_url, isBlob: true, loading: false });
-            return;
           }
-          setViewer({ resource_id: r.resource_id, title: r.title, blob: null, view_url: data.view_url, isPdf: false, loading: true });
-          const blobRes = await api.get(`/resources/${r.resource_id}/stream`, { responseType: "blob" });
-          blobCache.current.set(r.resource_id, blobRes.data);
+          return;
+        }
+        setViewer({ resource_id: r.resource_id, title: r.title, blob: null, view_url: data.view_url, isPdf: true, loading: true });
+        const blobRes = await api.get(`/resources/${r.resource_id}/stream`, { responseType: "blob" });
+        blobCache.current.set(r.resource_id, blobRes.data);
+        const isPdf = (blobRes.data?.type || "").includes("pdf") || r.title?.toLowerCase().endsWith(".pdf");
+        if (isPdf) {
+          setViewer({ resource_id: r.resource_id, title: r.title, blob: blobRes.data, view_url: data.view_url, isPdf: true, loading: false });
+        } else {
           const blobUrl = URL.createObjectURL(blobRes.data);
           setViewer({ resource_id: r.resource_id, title: r.title, embed_url: blobUrl, view_url: data.view_url, isBlob: true, loading: false });
         }
       } else {
         setViewer({ resource_id: r.resource_id, title: r.title, embed_url: data.embed_url, view_url: data.view_url, isBlob: false, loading: false });
       }
-    } catch {
-      toast.error("Could not open");
+    } catch (e) {
+      const status = e?.response?.status;
+      const code = e?.response?.data?.error?.code;
+      const message = e?.response?.data?.error?.message;
+      if (status === 401 || code === "drive_access_denied") {
+        toast.error("Drive access expired — reconnect in Settings");
+      } else if (message) {
+        toast.error(message);
+      } else {
+        toast.error("Could not open");
+      }
       setViewer(null);
     }
   };
@@ -263,10 +299,9 @@ export default function Resources() {
               <div className="w-8 h-8 border-2 border-border border-t-primary rounded-full animate-spin" />
               <div className="text-xs font-mono">Streaming from your Drive…</div>
             </div>
-          ) : viewer.isPdf && (viewer.blob || viewer.streamUrl) ? (
+          ) : viewer.isPdf && viewer.blob ? (
             <PdfCanvasViewer
               blob={viewer.blob}
-              streamUrl={viewer.streamUrl}
               notes={viewerNotes.content}
               importantPages={viewerNotes.important_pages}
               onNotesChange={saveNotesContent}
@@ -419,6 +454,13 @@ export default function Resources() {
               {TYPES.map(t => <option key={t}>{t}</option>)}
             </select>
           </div>
+
+          {syncing && (
+            <div className="text-xs mono text-muted-foreground border border-border rounded px-3 py-2 flex items-center gap-2">
+              <RefreshCw className="w-3 h-3 animate-spin" />
+              Syncing Drive files…
+            </div>
+          )}
 
           {lastSync && (
             <div className="text-xs mono text-muted-foreground border border-border rounded px-3 py-2">

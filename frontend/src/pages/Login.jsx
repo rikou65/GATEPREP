@@ -22,6 +22,7 @@ export default function Login() {
       const r = await api.post("/auth/dev-login");
       if (r.data?.success) {
         setUser(r.data.data.user);
+        localStorage.setItem("driveSyncNeeded", "true");
         window.location.href = "/dashboard";
       }
     } catch (error) {
