@@ -4,10 +4,11 @@ import os
 from typing import Any, Dict, List, Optional
 
 import httpx
-from fastapi import APIRouter, Depends, BackgroundTasks, UploadFile, File, Form
+from fastapi import APIRouter, Depends, BackgroundTasks, UploadFile, File, Form, Request
 from pydantic import BaseModel
 
 from shared import db, err, get_current_user, ok, new_id, iso, now_utc, logger
+from limiter import limiter
 
 router = APIRouter()
 
@@ -30,7 +31,9 @@ async def run_mistral_ocr_background(job_id: str, file_path: str, subject_id: st
             except: pass
 
 @router.post("/import/pdf")
+@limiter.limit("10/minute")
 async def import_pdf(
+    request: Request,
     background_tasks: BackgroundTasks,
     subject_id: str = Form(...),
     engine: str = Form("mistral"),

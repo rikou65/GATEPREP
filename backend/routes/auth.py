@@ -9,12 +9,17 @@ import secrets
 import httpx
 from shared import db, err, get_current_user, iso, logger, new_id, now_utc, ok, settings
 
+from limiter import limiter
+
 router = APIRouter()
 
 
 @router.post("/auth/dev-login")
-async def dev_login(response: Response):
+@limiter.limit("5/15minutes")
+async def dev_login(request: Request, response: Response):
     """Bypass external OAuth for local development."""
+    if settings.ENVIRONMENT != "development":
+        return err("disabled", "Dev login is only available in development", 403)
     user_id = "demo_user_123"
     await db.users.update_one(
         {"user_id": user_id},

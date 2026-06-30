@@ -1,10 +1,13 @@
 """GATEPREP - FastAPI backend (MongoDB)."""
-from fastapi import FastAPI, APIRouter
+from fastapi import FastAPI, APIRouter, Request
+from fastapi.responses import JSONResponse
 from starlette.middleware.cors import CORSMiddleware
 
 from shared import client, db, logger, ok
 from seed import seed_data
 from migrations import _migrate_v2_split_subjects, _migrate_per_user_content, _ensure_flag_indexes
+from limiter import limiter
+from slowapi import _rate_limit_exceeded_handler
 
 from routes.auth import router as auth_router
 from routes.subjects import router as subjects_router
@@ -16,6 +19,9 @@ from routes.admin_staging import router as admin_staging_router
 from shared import settings
 
 app = FastAPI(title="GATEPREP")
+app.state.limiter = limiter
+app.add_exception_handler(429, _rate_limit_exceeded_handler)
+
 api = APIRouter(prefix="/api")
 
 # mount extracted routes
@@ -53,6 +59,21 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["*"],
 )
+
+# Custom exception handler — return JSON instead of raw traceback
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.error(f"Unhandled exception: {exc}", exc_info=True)
+    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
+
+# Security headers middleware
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    return response
 
 @app.on_event("startup")
 async def on_startup():

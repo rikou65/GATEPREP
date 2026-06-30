@@ -21,4 +21,6 @@ class Settings(BaseSettings):
     FRONTEND_URL: Optional[str] = ""
     MISTRAL_API_KEY: Optional[str] = ""
 
+    ENVIRONMENT: Optional[str] = "development"
+
 

@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, Query, Response, UploadFile, Request
 from fastapi.responses import RedirectResponse
+from limiter import limiter
 from pydantic import BaseModel
 import httpx
 from google.auth.transport.requests import Request as GoogleRequest
@@ -558,7 +559,9 @@ async def set_page_label(resource_id: str, body: PageLabelIn, user=Depends(get_c
 
 
 @router.post("/resources/upload")
+@limiter.limit("10/minute")
 async def resources_upload(
+    request: Request,
     file: UploadFile = File(...),
     subject_id: str = Form(...),
     resource_type: str = Form(...),
@@ -574,8 +577,8 @@ async def resources_upload(
     contents = await file.read()
     if not contents:
         return err("empty_file", "Empty file", 400)
-    if len(contents) > 100 * 1024 * 1024:
-        return err("too_large", "File exceeds 100MB", 413)
+    if len(contents) > 200 * 1024 * 1024:
+        return err("too_large", "File exceeds 200MB", 413)
     parent_id = _ensure_resource_folder(service, resource_type, subject["name"])
     media = MediaIoBaseUpload(io.BytesIO(contents), mimetype=file.content_type or "application/octet-stream", resumable=False)
     drive_file = service.files().create(

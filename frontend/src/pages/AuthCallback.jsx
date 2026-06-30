@@ -45,9 +45,9 @@ export default function AuthCallback() {
         const r = await api.post("/auth/session", { code });
         setUser(r.data?.data?.user || null);
         localStorage.setItem("driveSyncNeeded", "true");
-        window.history.replaceState({}, "", "/dashboard");
-        navigate("/dashboard", { replace: true });
-      } catch {
+        window.location.href = "/dashboard";
+      } catch (e) {
+        console.error("Auth callback failed:", e);
         navigate("/", { replace: true });
       }
     })();
