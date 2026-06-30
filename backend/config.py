@@ -1,11 +1,12 @@
 from __future__ import annotations
-
 from typing import Optional
 
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+
     MONGO_URL: str
     DB_NAME: str
     JWT_SECRET: str
@@ -19,8 +20,5 @@ class Settings(BaseSettings):
 
     FRONTEND_URL: Optional[str] = ""
     MISTRAL_API_KEY: Optional[str] = ""
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
 
 

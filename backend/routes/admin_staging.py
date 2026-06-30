@@ -9,16 +9,15 @@ from pydantic import BaseModel
 
 from shared import db, err, get_current_user, ok, new_id, iso, now_utc, logger
 
-# Import the Mistral OCR pipeline
-import sys
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from scripts.mistral_ocr import MistralOCRPipeline
-
 router = APIRouter()
 
 async def run_mistral_ocr_background(job_id: str, file_path: str, subject_id: str, source: str = ""):
     """Background task to run the Mistral OCR pipeline."""
     try:
+        import sys
+        sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+        from scripts.mistral_ocr import MistralOCRPipeline
+
         pipeline = MistralOCRPipeline(file_path, subject_id, job_id=job_id, source=source)
         await pipeline.process_pdf()
         await db.import_jobs.update_one({"job_id": job_id}, {"$set": {"status": "COMPLETED", "completed_at": iso(now_utc())}})
