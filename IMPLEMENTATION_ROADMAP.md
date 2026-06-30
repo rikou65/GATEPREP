@@ -4,19 +4,13 @@
 
 **Goal:** Clean up repo, push current state, create backup.
 
-- [ ] Delete debug scripts:
-  - `backend/check_db2.py`
-  - `backend/check_jobs.py`
-  - `backend/check_q65.py`
-  - `backend/clear_db.py`
-  - `backend/fix_answers.py`
-  - `backend/scratch/` (entire folder)
-- [ ] Move `backend/test_short.pdf` → `backend/tests/fixtures/`
-- [ ] Run `git status` — review all modified and untracked files
-- [ ] Verify `backend/.env` is NOT tracked in git (`git ls-files | grep .env`)
-- [ ] Create/update `.gitignore` if needed
-- [ ] Stage appropriate files, commit, push to `origin/main`
-- [ ] Create backup branch: `git branch backup-before-refactor`
+- [x] Delete debug scripts
+- [x] Move `backend/test_short.pdf` → `backend/tests/fixtures/`
+- [x] Run `git status` — review all modified and untracked files
+- [x] Verify `backend/.env` is NOT tracked in git
+- [x] Create/update `.gitignore` if needed
+- [x] Stage appropriate files, commit, push to `origin/main`
+- [x] Create backup branch: `git branch backup-before-refactor`
 
 ---
 
@@ -25,89 +19,27 @@
 **Goal:** Faster dev experience, remove dead branding, clean up easy structural issues.
 
 ### 1.1 Vite Migration
-- [x] Install `vite` + `@vitejs/plugin-react`
-- [x] Create `vite.config.js` with React plugin and `@` alias
-- [x] Move `index.html` to root, update for Vite (script module, no `%PUBLIC_URL%`)
-- [x] Rename `src/index.js` → `src/index.jsx`, `src/App.js` → `src/App.jsx`
-- [x] Replace `REACT_APP_*` env vars with `VITE_*`
-- [x] Update `package.json` scripts: `craco start/build` → `vite`/`vite build`
-- [x] Remove `craco.config.js`, `react-scripts`, `@craco/craco`, `cra-template`
-- [x] Remove `public/index.html` (moved to root)
-- [x] **Build verified — 6s vs ~50s previously** ✅
-- [ ] Test: Drive viewer, PDF viewer, YouTube player, OCR staging queue after migration
-- [ ] Update `SELF_HOSTING.md` build settings if needed
+- [x] All items complete ✅
 
 ### 1.2 Rebranding
-- [ ] `README.md` — title + body references
-- [ ] `PRD.md` — title
-- [ ] `IMPLEMENTATION_PLAN.md` — title
-- [ ] `OCR_PIPELINE.md` — title
-- [ ] `CONTRIBUTING.md` — title
-- [ ] `SELF_HOSTING.md` — all "GATE Study OS" references
-- [ ] `backend/server.py` — docstring
-- [ ] `backend/seed.py` — docstring
-- [ ] `backend/migrations.py` — docstring
-- [ ] `backend/tests/test_gate_os_backend.py` — docstring + rename file to `test_gateprep_backend.py`
-- [ ] Rename MongoDB DB name `gate_study_os` → `gateprep` (update `.env.example` if needed)
-- [ ] Keep Drive folder name `GATEPREP/` as-is
+- [x] All items complete ✅
 
 ### 1.3 Remove Admin Everywhere
-- [ ] Delete `frontend/src/pages/Admin.jsx`
-- [ ] Remove `is_admin` field from users schema and all code references
-- [ ] Remove `ADMIN_EMAILS` from `config.py` and `.env.example`
-- [ ] Remove `get_admin_user()` dependency and all admin-only endpoints in `practice.py`:
-  - `POST /api/admin/questions`
-  - `DELETE /api/admin/questions/{id}`
-  - `POST /api/admin/pyqs`
-  - `DELETE /api/admin/pyqs/{id}`
-  - `GET /api/admin/users`
-- [ ] Rename `/api/admin/*` routes → `/api/data/*` or `/api/import/*`:
-  - `admin_staging.py` route prefix from `/admin` → `/data`
-  - Update frontend `Layout.jsx` nav links
-  - Update route paths in `App.js`
+- [x] All items complete ✅
 
 ### 1.4 Remove Difficulty Everywhere
-- [ ] Remove `difficulty` from `seed.py` sample data
-- [ ] Remove `difficulty` default from `QuestionIn` Pydantic model
-- [ ] Remove `difficulty` from `QuestionPatch` model
-- [ ] Remove `difficulty` filter parameter from `list_questions` and `list_pyqs`
-- [ ] Remove `difficulty` display from `QuestionViewer.jsx` and any other components
-- [ ] Remove `difficulty` from `QuestionForm.jsx` if present
+- [x] All items complete ✅
 
 ### 1.5 Delete Dead Code
-- [ ] `backend/scripts/import_go_pdfs.py`
-- [ ] `backend/scripts/parse_llama.py`
-- [ ] `backend/scripts/parse_unacademy.py`
-- [ ] Clean up `admin_staging.py` dead imports:
-  - Remove `PDFOrchestrator` import
-  - Remove `parse_with_llama` import
-  - Remove `run_llama_parser_background()` function
-  - Remove `run_ocr_pipeline_background()` function
+- [x] All items complete ✅
 
 ### 1.6 Low-Risk Backend Restructure
-- [ ] Add `__init__.py` to `backend/routes/`, `backend/scripts/`, `backend/tests/`
-- [ ] Split `routes/core.py`:
-  - `routes/auth.py` — dev-login, session, logout, me
-  - `routes/subjects.py` — subjects, topics CRUD
-- [ ] Extract Pydantic schemas to `backend/schemas.py`:
-  - `AttemptIn`, `NotesIn`, `QuestionIn`, `QuestionPatch`, `PYQIn`, `FlagIn`, `MistakeIn`
-  - `ApproveSpecificRequest`
-  - `PlaylistImportIn`, `VideoProgressIn`
-  - `ResourceIn`, `ResourceNotesIn`, `TogglePageIn`, `PageLabelIn`
-- [ ] Extract string constants to `backend/constants.py`:
-  - `QUESTION_TYPES = ["MCQ", "MSQ", "NAT"]`
-  - `FLAG_TYPES = ["review", "important"]`
-  - `MISTAKE_TYPES = ["Conceptual Gap", "Calculation Error", "Question Misread", "Silly Mistake"]`
-- [ ] Move utility helpers from `shared.py`:
-  - `err()` / `ok()` → `backend/utils/response.py`
-  - `new_id()` → `backend/utils/id.py`
-  - `now_utc()`, `iso()` → `backend/utils/time.py`
-  - `async_get`, `async_post` → `backend/utils/http.py`
+- [x] All items complete ✅
 
 ### 1.7 Low-Risk Frontend Cleanup
-- [ ] Extract `FilterPills` component from `QuestionBank.jsx` / `PYQs.jsx` → `components/common/FilterPills.jsx`
-- [ ] Move `lib/api.js` → `api/client.js`
-- [ ] Create `frontend/src/components/common/` directory
+- [x] FilterPills extracted to `components/common/FilterPills.jsx`
+- [x] `frontend/src/components/common/` created
+- [ ] Move `lib/api.js` → `api/client.js` (skipped — no LOC reduction)
 
 ---
 
@@ -156,16 +88,16 @@
 
 ## Phase 3 — YouTube OAuth
 
-- [ ] Add `youtube.readonly` OAuth scope to Google OAuth flow
-- [ ] Store per-user YouTube access/refresh tokens in `youtube_credentials` collection
-- [ ] Create `GET /api/youtube/auth` endpoint — returns auth URL
-- [ ] Create `GET /api/youtube/callback` — handles OAuth callback, stores tokens
-- [ ] Create `GET /api/youtube/status` — check if user has YouTube connected
-- [ ] Create `POST /api/youtube/disconnect` — revoke tokens
-- [ ] Update playlist import to use per-user YouTube token instead of shared API key
-- [ ] Remove `YOUTUBE_API_KEY` from `config.py` and `.env.example`
-- [ ] Update frontend Settings page with YouTube connect/disconnect UI
-- [ ] Update `Playlists.jsx` to use OAuth-aware API calls
+- [x] Add `youtube.readonly` OAuth scope
+- [x] Store per-user YouTube tokens in `youtube_credentials` collection
+- [x] `GET /youtube/auth` endpoint
+- [x] `GET /youtube/callback` endpoint
+- [x] `GET /youtube/status` endpoint
+- [x] `POST /youtube/disconnect` endpoint
+- [x] Playlist import uses per-user YouTube token
+- [ ] Remove `YOUTUBE_API_KEY` from `config.py` and `.env.example` (user chose to keep it)
+- [x] Settings UI with connect/disconnect
+- [x] Playlist import uses OAuth ✅
 
 ---
 

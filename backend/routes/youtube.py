@@ -47,6 +47,7 @@ async def _get_youtube_token(user_id: str) -> str | None:
                 )
         except Exception as e:
             logger.warning(f"YouTube token refresh failed for {user_id}: {e}")
+            await db.youtube_credentials.delete_one({"user_id": user_id})
             return None
     return token
 

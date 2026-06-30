@@ -618,6 +618,8 @@ async def resource_view(resource_id: str, request: Request, user=Depends(get_cur
         if m:
             drive_file_id = m.group(1)
     if drive_file_id:
+        # Proactively refresh Drive token so the stream is ready.
+        await _get_drive_creds(user["user_id"])
         backend_base = str(request.base_url).rstrip("/")
         embed_url = f"{backend_base}/api/resources/{resource_id}/stream"
         web_view = res.get("external_url", "")
@@ -669,9 +671,11 @@ async def resource_stream(resource_id: str, request: Request, user=Depends(get_c
                 content = await _download(creds.token)
             except httpx.HTTPStatusError as e2:
                 logger.error(f"Drive stream retry HTTP error for {resource_id}: {e2.response.status_code}")
+                await db.drive_credentials.delete_one({"user_id": user["user_id"]})
                 return err("drive_access_denied", "Google Drive access expired — reconnect in Settings", 401)
             except Exception as e2:
                 logger.error(f"Drive stream retry error for {resource_id}: {e2}")
+                await db.drive_credentials.delete_one({"user_id": user["user_id"]})
                 return err("drive_access_denied", "Google Drive access expired — reconnect in Settings", 401)
         else:
             return err("drive_stream_failed", f"Google Drive returned {status}", 502)
