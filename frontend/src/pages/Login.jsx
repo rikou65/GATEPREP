@@ -25,8 +25,7 @@ export default function Login() {
         localStorage.setItem("driveSyncNeeded", "true");
         window.location.href = "/dashboard";
       }
-    } catch (error) {
-      console.error("Dev login failed:", error);
+    } catch {
       alert("Local login failed. Make sure your backend is running on port 8000.");
     } finally {
       setLoading(false);

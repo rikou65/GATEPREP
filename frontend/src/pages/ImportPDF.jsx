@@ -55,7 +55,6 @@ export default function ImportPDF() {
       toast.success("PDF sent to Mistral OCR pipeline. Check Staging Queue!");
       navigate("/admin/staging");
     } catch (err) {
-      console.error(err);
       toast.error(err.response?.data?.error?.message || "Failed to start import.");
     } finally {
       setLoading(false);

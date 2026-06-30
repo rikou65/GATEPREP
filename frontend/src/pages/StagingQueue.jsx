@@ -26,8 +26,8 @@ export default function StagingQueue() {
     try {
       const res = await api.get("/data/staging");
       setItems(res.data?.data || []);
-    } catch (e) {
-      console.error(e);
+    } catch {
+      // silently ignore
     } finally {
       setLoading(false);
     }

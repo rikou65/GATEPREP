@@ -47,8 +47,7 @@ export default function AuthCallback() {
         localStorage.setItem("driveSyncNeeded", "true");
         window.history.replaceState({}, "", "/dashboard");
         navigate("/dashboard", { replace: true });
-      } catch (e) {
-        console.error("Auth callback failed:", e);
+      } catch {
         navigate("/", { replace: true });
       }
     })();
