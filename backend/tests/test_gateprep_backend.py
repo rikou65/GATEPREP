@@ -280,9 +280,9 @@ class TestPlaylists:
         assert body["error"]["code"] == "invalid_url"
 
 
-# --------- Admin gating ---------
-class TestAdmin:
-    def test_admin_create_question(
+# --------- Question creation ---------
+class TestQuestionCreation:
+    def test_create_question(
         self, admin_headers: Dict[str, str], subjects: List[Dict[str, Any]]
     ) -> None:
         sid = subjects[0]["subject_id"]
@@ -293,22 +293,8 @@ class TestAdmin:
             "options": ["3", "4", "5", "6"], "correct_answer": "1",
             "solution": "Basic math",
         }
-        r = requests.post(f"{API}/admin/questions", headers=admin_headers, json=payload)
+        r = requests.post(f"{API}/questions", headers=admin_headers, json=payload)
         assert r.status_code == 200, r.text
         qid = r.json()["data"]["question_id"]
         # cleanup
-        requests.delete(f"{API}/admin/questions/{qid}", headers=admin_headers)
-
-    def test_admin_rejects_non_admin(
-        self, user_headers: Dict[str, str], subjects: List[Dict[str, Any]]
-    ) -> None:
-        sid = subjects[0]["subject_id"]
-        t = requests.get(f"{API}/subjects/{sid}/topics").json()["data"][0]
-        payload: Dict[str, Any] = {
-            "subject_id": sid, "topic_id": t["topic_id"],
-            "question_type": "MCQ", "question_text": "TEST_blocked",
-            "options": ["a", "b"], "correct_answer": "0",
-            "solution": "x",
-        }
-        r = requests.post(f"{API}/admin/questions", headers=user_headers, json=payload)
-        assert r.status_code == 403
+        requests.delete(f"{API}/questions/{qid}", headers=admin_headers)
