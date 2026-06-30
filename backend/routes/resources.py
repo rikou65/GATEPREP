@@ -72,16 +72,22 @@ async def _get_drive_creds(user_id: str):
     )
 
     if not creds.valid and creds.refresh_token:
-        creds.refresh(GoogleRequest())
-        new_expiry = creds.expiry.replace(tzinfo=timezone.utc) if creds.expiry else None
-        await db.drive_credentials.update_one(
-            {"user_id": user_id},
-            {"$set": {
-                "access_token": creds.token,
-                "expiry": iso(new_expiry) if new_expiry else None,
-                "updated_at": iso(now_utc()),
-            }},
-        )
+        try:
+            creds.refresh(GoogleRequest())
+            new_expiry = creds.expiry.replace(tzinfo=timezone.utc) if creds.expiry else None
+            await db.drive_credentials.update_one(
+                {"user_id": user_id},
+                {"$set": {
+                    "access_token": creds.token,
+                    "expiry": iso(new_expiry) if new_expiry else None,
+                    "updated_at": iso(now_utc()),
+                }},
+            )
+            return creds
+        except Exception as e:
+            logger.warning(f"Drive token refresh failed for {user_id}: {e}")
+            await db.drive_credentials.delete_one({"user_id": user_id})
+            return None
     return creds
 
 
