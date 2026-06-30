@@ -26,19 +26,17 @@ jobs:
       DB_NAME: gateprep_ci
       JWT_SECRET: test_jwt_secret_key_for_ci_pipeline
       YOUTUBE_API_KEY: ""
-      ADMIN_EMAILS: ""
       GOOGLE_DRIVE_CLIENT_ID: ""
       GOOGLE_DRIVE_CLIENT_SECRET: ""
       GOOGLE_DRIVE_REDIRECT_URI: http://localhost:8001/api/drive/callback
       FRONTEND_URL: http://localhost:3000
-      GEMINI_API_KEY: ""
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
@@ -57,10 +55,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: "24"
           cache: npm
@@ -73,6 +71,5 @@ jobs:
       - name: Build frontend
         working-directory: frontend
         env:
-          REACT_APP_BACKEND_URL: http://localhost:8001
-          CI: false
+          VITE_BACKEND_URL: http://localhost:8001
         run: npm run build
