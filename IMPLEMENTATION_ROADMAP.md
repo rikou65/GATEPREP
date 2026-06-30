@@ -19,70 +19,98 @@
 **Goal:** Faster dev experience, remove dead branding, clean up easy structural issues.
 
 ### 1.1 Vite Migration
-- [x] All items complete ✅
+- [x] Install `vite` + `@vitejs/plugin-react`
+- [x] Create `vite.config.js` with React plugin and `@` alias
+- [x] Move `index.html` to root, update for Vite (script module, no `%PUBLIC_URL%`)
+- [x] Rename `src/index.js` → `src/index.jsx`, `src/App.js` → `src/App.jsx`
+- [x] Replace `REACT_APP_*` env vars with `VITE_*`
+- [x] Update `package.json` scripts: `craco start/build` → `vite`/`vite build`
+- [x] Remove `craco.config.js`, `react-scripts`, `@craco/craco`, `cra-template`
+- [x] Remove `public/index.html` (moved to root)
+- [x] **Build verified — 6s vs ~50s previously** ✅
+- [ ] Test: Drive viewer, PDF viewer, YouTube player, OCR staging queue after migration
+- [ ] Update `SELF_HOSTING.md` build settings if needed
 
 ### 1.2 Rebranding
-- [x] All items complete ✅
+- [x] `README.md` — title + body references
+- [x] `PRD.md` — title
+- [x] `IMPLEMENTATION_PLAN.md` — title
+- [x] `OCR_PIPELINE.md` — title
+- [x] `CONTRIBUTING.md` — title
+- [x] `SELF_HOSTING.md` — all "GATE Study OS" references
+- [x] `backend/server.py` — docstring
+- [x] `backend/seed.py` — docstring
+- [x] `backend/migrations.py` — docstring
+- [x] `backend/tests/test_gate_os_backend.py` — docstring + rename file to `test_gateprep_backend.py`
+- [x] Rename MongoDB DB name `gate_study_os` → `gateprep` (update `.env.example` if needed)
+- [x] Keep Drive folder name `GATEPREP/` as-is
 
 ### 1.3 Remove Admin Everywhere
-- [x] All items complete ✅
+- [x] Delete `frontend/src/pages/Admin.jsx`
+- [x] Remove `is_admin` field from users schema and all code references
+- [x] Remove `ADMIN_EMAILS` from `config.py` and `.env.example`
+- [x] Remove `get_admin_user()` dependency and all admin-only endpoints in `practice.py`
+- [x] Rename `/api/admin/*` routes → `/api/data/*` or `/api/import/*`
 
 ### 1.4 Remove Difficulty Everywhere
-- [x] All items complete ✅
+- [x] Remove `difficulty` from `seed.py` sample data
+- [x] Remove `difficulty` default from `QuestionIn` Pydantic model
+- [x] Remove `difficulty` from `QuestionPatch` model
+- [x] Remove `difficulty` filter parameter from `list_questions` and `list_pyqs`
+- [x] Remove `difficulty` display from `QuestionViewer.jsx` and any other components
+- [x] Remove `difficulty` from `QuestionForm.jsx` if present
 
 ### 1.5 Delete Dead Code
-- [x] All items complete ✅
+- [x] `backend/scripts/import_go_pdfs.py`
+- [x] `backend/scripts/parse_llama.py`
+- [x] `backend/scripts/parse_unacademy.py`
+- [x] Clean up `admin_staging.py` dead imports
 
 ### 1.6 Low-Risk Backend Restructure
-- [x] All items complete ✅
+- [x] Add `__init__.py` to `backend/routes/`, `backend/scripts/`, `backend/tests/`
+- [x] Split `routes/core.py`:
+  - `routes/auth.py` — dev-login, session, logout, me
+  - `routes/subjects.py` — subjects, topics CRUD
+- [x] Extract Pydantic schemas to `backend/schemas.py`
+- [x] Extract string constants to `backend/constants.py`
+- [x] Move utility helpers from `shared.py`
 
 ### 1.7 Low-Risk Frontend Cleanup
-- [x] FilterPills extracted to `components/common/FilterPills.jsx`
-- [x] `frontend/src/components/common/` created
+- [x] Extract `FilterPills` component from `QuestionBank.jsx` / `PYQs.jsx` → `components/common/FilterPills.jsx`
+- [x] Create `frontend/src/components/common/` directory
 - [ ] Move `lib/api.js` → `api/client.js` (skipped — no LOC reduction)
 
 ---
 
 ## Phase 2 — Security Hardening
 
-- [ ] Lock down CORS: `allow_origins=["*"]` → specific production domain list
-- [ ] Add rate limiting middleware (slowapi or fastapi-limiter):
-  - Login: 5 attempts/15 min per IP
-  - General API: 100 requests/min per user
-  - File upload: 10 requests/min per user
+### ✅ Completed
+- [x] Lock down CORS: specific origins in `server.py`
+- [x] Rate limiting with slowapi (100/min default, 5/15min login, 10/min upload)
+- [x] Global exception handler with `@app.exception_handler(Exception)`
+- [x] Security headers middleware (`X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`)
+- [x] Input validation (`max_length` on all Pydantic models)
+- [x] Auth on all endpoints (including subjects/topics)
+- [x] Dev-login gated behind `ENVIRONMENT` env var
+- [x] 200MB upload limit (was 100MB)
+
+### ❌ Remaining
 - [ ] Fix IDOR on staging endpoints:
   - `GET /api/data/staging` — filter by `user_id`
   - `DELETE /api/data/staging` — filter by `user_id`
   - `DELETE /api/data/staging/{id}` — verify ownership
   - `POST /api/data/staging/approve-specific` — verify ownership
-- [ ] Add global exception handler with `@app.exception_handler(Exception)`
 - [ ] Set `secure=True`, `SameSite=Strict` on session cookies in production
 - [ ] Remove `tlsAllowInvalidCertificates=True` for production MongoDB
-- [ ] Guard `/api/auth/dev-login` behind `if not PRODUCTION` env check
-- [ ] Add security headers middleware:
-  - `X-Content-Type-Options: nosniff`
-  - `X-Frame-Options: DENY`
-  - `Strict-Transport-Security: max-age=31536000`
-  - `Content-Security-Policy`
-  - `Referrer-Policy: strict-origin-when-cross-origin`
-- [ ] Secure file uploads:
-  - Validate PDF magic bytes (`%PDF` header)
-  - Validate MIME type on backend
-  - Enforce extension whitelist (`.pdf` only)
-  - 50MB size limit on PDF import endpoint
-- [ ] Add global request payload size limit middleware
-- [ ] Sanitize MongoDB operators: strip `$` and `.` from user input strings
-- [ ] Add HTTPS redirect middleware for production
-- [ ] Invalidate all sessions when user changes password
-- [ ] Add audit log for sensitive actions:
-  - Logins (success/failure)
-  - Password changes
-  - Drive connect/disconnect
-  - Question/PYQ deletes
-  - Import job starts/completions
+- [ ] `Strict-Transport-Security` header
+- [ ] `Content-Security-Policy` header
+- [ ] Secure file uploads: validate PDF magic bytes, MIME type, extension whitelist
+- [ ] Global request payload size limit middleware
+- [ ] Sanitize MongoDB operators: strip `$` and `.` from user input
+- [ ] HTTPS redirect middleware for production
+- [ ] Audit log for sensitive actions
 - [ ] Validate OAuth `state` parameter in Google login callback
-- [ ] Scan repo for leaked secrets (PostHog key in `index.html`, any other hardcoded tokens)
-- [ ] Rotate any exposed secrets
+- [ ] Scan repo for leaked secrets & rotate exposed ones
 
 ---
 
