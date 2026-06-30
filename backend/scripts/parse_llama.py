@@ -17,7 +17,7 @@ nest_asyncio.apply()
 
 # Add backend to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from shared import db, new_id, now_utc, iso, logger
+from shared import db, new_id, now_utc, iso, logger, settings
 
 FRONTEND_PUBLIC_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../frontend/public/unacademy_images"))
 os.makedirs(FRONTEND_PUBLIC_DIR, exist_ok=True)

@@ -11,7 +11,7 @@ export default function ImportPDF() {
   const [subjects, setSubjects] = useState([]);
   const [subjectId, setSubjectId] = useState("");
   const [uploadMode, setUploadMode] = useState("file"); // "file" or "url"
-  const [engine, setEngine] = useState("llama"); // "ocr" or "local" or "llama"
+  const [source, setSource] = useState(""); // e.g. "GO-PDFs", "MADE Easy", etc.
   const [file, setFile] = useState(null);
   const [url, setUrl] = useState("");
   const [loading, setLoading] = useState(false);
@@ -40,7 +40,8 @@ export default function ImportPDF() {
     try {
       const formData = new FormData();
       formData.append("subject_id", subjectId);
-      formData.append("engine", engine);
+      formData.append("engine", "mistral");
+      formData.append("source", source.trim());
       if (uploadMode === "file") {
         formData.append("file", file);
       } else {
@@ -51,7 +52,7 @@ export default function ImportPDF() {
         headers: { "Content-Type": "multipart/form-data" },
       });
       
-      toast.success(`PDF sent to ${engine === 'ocr' ? 'OCR pipeline' : 'Local Parser'}. Check Staging Queue!`);
+      toast.success("PDF sent to Mistral OCR pipeline. Check Staging Queue!");
       navigate("/admin/staging");
     } catch (err) {
       console.error(err);
@@ -62,7 +63,7 @@ export default function ImportPDF() {
   };
 
   return (
-    <Layout title="Import GO-PDF">
+    <Layout title="Import PDF">
       <div className="max-w-2xl mx-auto space-y-8">
         
         <div className="bg-card border border-border p-6 rounded-xl">
@@ -79,6 +80,7 @@ export default function ImportPDF() {
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-6">
+            {/* 1. Subject */}
             <div className="space-y-2">
               <label className="text-sm font-medium">1. Select Target Subject</label>
               <select 
@@ -93,28 +95,33 @@ export default function ImportPDF() {
               </select>
             </div>
 
-            <div className="space-y-4">
-              <label className="text-sm font-medium">2. Parsing Engine</label>
-              <div className="flex gap-4">
-                <label className={`flex-1 p-4 border rounded-xl cursor-pointer transition-all ${engine === "llama" ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"}`}>
-                  <div className="flex items-center gap-2 mb-1">
-                    <input type="radio" name="engine" value="llama" checked={engine === "llama"} onChange={() => setEngine("llama")} className="text-primary" />
-                    <span className="font-semibold text-sm">LlamaParse + Auto-Image</span>
-                  </div>
-                  <p className="text-xs text-muted-foreground ml-5">Industry standard for complex PDFs. Rips out embedded diagrams automatically. Lightning fast.</p>
-                </label>
-                <label className={`flex-1 p-4 border rounded-xl cursor-pointer transition-all ${engine === "ocr" ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"}`}>
-                  <div className="flex items-center gap-2 mb-1">
-                    <input type="radio" name="engine" value="ocr" checked={engine === "ocr"} onChange={() => setEngine("ocr")} className="text-primary" />
-                    <span className="font-semibold text-sm">Gemini AI OCR</span>
-                  </div>
-                  <p className="text-xs text-muted-foreground ml-5">Slower cloud AI extraction. Best for scanned images or PDFs with non-selectable text.</p>
-                </label>
+            {/* 2. Source label */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">2. Source / Publisher <span className="text-muted-foreground font-normal">(optional)</span></label>
+              <Input
+                type="text"
+                placeholder="e.g. GO-PDFs, MADE Easy, ACE Academy, Self-Made…"
+                value={source}
+                onChange={(e) => setSource(e.target.value)}
+                className="h-11"
+              />
+              <p className="text-xs text-muted-foreground">
+                This tag will appear on every question imported from this PDF. Leave blank if not applicable.
+              </p>
+            </div>
+
+            {/* 3. OCR Engine info */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">3. Ingestion Engine</label>
+              <div className="p-4 border border-primary/20 bg-primary/5 rounded-xl">
+                <div className="font-semibold text-sm text-primary">Mistral AI OCR</div>
+                <p className="text-xs text-muted-foreground mt-1">State-of-the-art layout-aware document OCR. High-precision KaTeX math formatting and relational solution stitching.</p>
               </div>
             </div>
 
+            {/* 4. PDF Source */}
             <div className="space-y-4">
-              <label className="text-sm font-medium">3. Provide PDF Source</label>
+              <label className="text-sm font-medium">4. Provide PDF</label>
               
               <div className="flex bg-muted p-1 rounded-lg">
                 <button

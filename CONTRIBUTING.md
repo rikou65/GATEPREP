@@ -29,13 +29,14 @@ Be kind. Assume good faith. Critique code, not people. That's the whole policy.
 See [`README.md`](./README.md#local-development) for the quick start. Two extra things contributors should do:
 
 1. **Read [`IMPLEMENTATION_PLAN.md`](./IMPLEMENTATION_PLAN.md)** — it explains what's being built, in what order, and why. If your PR conflicts with the active phase, talk to the maintainer first.
-2. **Read [`memory/PRD.md`](./memory/PRD.md)** — the living product spec. It's the source of truth for *what* the product is.
+2. **Read [`PRD.md`](./PRD.md)** — the living product spec. It's the source of truth for *what* the product is.
 
 Recommended tooling:
-- Python **3.11+** with `venv` or `uv`
-- Node **20+** with `yarn` (do **not** use `npm` — CRA toolchain breakage)
+- Python **3.12+** with `venv`
+- Node **20+** with `npm` (use `--legacy-peer-deps` on install due to CRA peer dep conflicts)
 - A MongoDB instance (local Docker is fine: `docker run -d -p 27017:27017 mongo:7`)
-- VS Code with the official Python, ESLint, and Tailwind CSS IntelliSense extensions
+- VS Code with the official Python, ESLint, Pylance, and Tailwind CSS IntelliSense extensions
+- A Mistral AI API key (required if working on the OCR pipeline — get one at https://console.mistral.ai/)
 
 ---
 
@@ -64,7 +65,8 @@ Recommended tooling:
 - **ObjectId:** never returned raw. Convert to `str` in response models.
 - **Multi-tenancy:** every database query that touches a user-owned collection **must** filter by `user_id`. No exceptions. Code review will reject otherwise.
 - **Errors:** raise `HTTPException` with explicit status + detail. Don't return `{"error": "..."}` from a 200.
-- **Env vars:** read via `os.environ.get('FOO')`. Never hardcode defaults for secrets/URLs — let it fail fast.
+- **Env vars:** read via `os.environ.get('FOO')`. Never hardcode defaults for secrets/URLs — let it fail fast. Do NOT use the `settings` Pydantic object inside background tasks (worker context issue — causes `NameError`).
+- **Background tasks:** if a task needs a config value, pass it as a plain argument — don't rely on module-level `settings` in the task function.
 
 ### Both
 
@@ -111,7 +113,7 @@ Before opening a PR:
 - [ ] All new code follows the conventions above.
 - [ ] Tests added/updated for any behaviour change.
 - [ ] `pytest` passes locally: `cd backend && pytest -v`.
-- [ ] Frontend lints clean: `cd frontend && yarn lint` (if configured) or no new warnings in `yarn start`.
+- [ ] Frontend compiles clean: `cd frontend && npm start` — no new errors in webpack output.
 - [ ] If UI changed → screenshot in the PR description.
 - [ ] If new env var introduced → added to both `.env.example` files **and** to the env table in `README.md`.
 - [ ] If auth credentials changed → `memory/test_credentials.md` updated.
@@ -179,7 +181,7 @@ If you add component tests, use `@testing-library/react` — colocated as `Compo
 These are the patterns that keep this codebase boring (in a good way):
 
 1. **`/api` prefix on every backend route.** Non-negotiable — the Kubernetes ingress depends on it.
-2. **`REACT_APP_BACKEND_URL` for every frontend → backend call.** No hardcoded URLs, ever.
+2. **`REACT_APP_BACKEND_URL` for every frontend → backend call.** No hardcoded URLs, ever. (Will change to `VITE_BACKEND_URL` after Vite migration.)
 3. **Drive files belong to the user.** We use `drive.file` scope. Never request broader scopes.
 4. **PYQs and Questions are separate collections.** Don't unify them. See README → Engineering Notes for the reasoning.
 5. **No combined "subject completion %".** Per-topic Solved/Remaining/Accuracy only.
@@ -187,7 +189,11 @@ These are the patterns that keep this codebase boring (in a good way):
 7. **The PDF viewer uses `pdfjs-dist` on a canvas.** Don't replace it with a Drive iframe; Brave will break it.
 8. **The PDF modal uses a React Portal.** Don't change the mount point.
 9. **`is None` is the correct PEP-8 idiom.** The linter occasionally flags it. Ignore the linter, follow PEP-8.
-10. **`server.py` stays monolithic until ~2k LOC.** See `IMPLEMENTATION_PLAN.md` § Phase 9.
+10. **`server.py` stays monolithic until ~2k LOC.** See `IMPLEMENTATION_PLAN.md` Phase 9.
+11. **No `difficulty` field anywhere.** It was removed deliberately — do not re-add it. Users can use the `tags` array.
+12. **Math rendering goes through `mathFormat.jsx`.** All question text and option text in both staging and live views must be passed through `formatMathText()` or `renderContentWithTables()`. Never render raw LaTeX strings as plain text.
+13. **OCR background tasks read env directly.** Never pass or import `settings` into `mistral_ocr.py` or any background task — use `os.environ.get()` to avoid worker-context `NameError`.
+14. **Staging ID normalization is mandatory.** Any new extraction pipeline must call `normalize_id()` before DB lookups to prevent duplicate records from `Q.1` vs `1` style mismatches.
 
 ---
 

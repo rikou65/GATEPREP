@@ -6,29 +6,6 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 240 10% 3.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 240 10% 3.9%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 240 10% 3.9%;
-    --primary: 240 5.9% 10%;
-    --primary-foreground: 0 0% 98%;
-    --secondary: 240 4.8% 95.9%;
-    --secondary-foreground: 240 5.9% 10%;
-    --muted: 240 4.8% 95.9%;
-    --muted-foreground: 240 3.8% 46.1%;
-    --accent: 240 4.8% 95.9%;
-    --accent-foreground: 240 5.9% 10%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 240 5.9% 90%;
-    --input: 240 5.9% 90%;
-    --ring: 240 10% 3.9%;
-    --radius: 0.5rem;
-  }
-
-  .dark {
     --background: 240 6% 5%;
     --foreground: 0 0% 98%;
     --card: 240 5% 7%;
@@ -48,12 +25,16 @@
     --border: 240 4% 15%;
     --input: 240 4% 15%;
     --ring: 240 4.9% 83.9%;
+    --radius: 0.5rem;
   }
 }
 
 @layer base {
   * { @apply border-border; }
-  html, body, #root { min-height: 100vh; }
+  html, body, #root { 
+    min-height: 100vh; 
+    background-color: hsl(240 6% 5%) !important;
+  }
   body {
     @apply bg-background text-foreground;
     font-family: "IBM Plex Sans", system-ui, sans-serif;
@@ -75,14 +56,24 @@
 
 /* Scrollbar */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: hsl(var(--border)); border-radius: 8px; }
-::-webkit-scrollbar-thumb:hover { background: hsl(var(--muted-foreground)); }
+::-webkit-scrollbar-track { background: hsl(240 6% 5%) !important; }
+::-webkit-scrollbar-thumb { background: hsl(240 4% 15%) !important; border-radius: 8px; border: 2px solid hsl(240 6% 5%); }
+::-webkit-scrollbar-thumb:hover { background: hsl(240 5% 64.9%) !important; }
+
+html {
+  scrollbar-color: hsl(240 4% 15%) hsl(240 6% 5%);
+  scrollbar-width: thin;
+}
 
 /* Question option states */
 .opt-correct { @apply border-emerald-500/60 bg-emerald-500/10; }
 .opt-incorrect { @apply border-red-500/60 bg-red-500/10; }
 .opt-missed { @apply border-amber-500/60 bg-amber-500/10; }
+
+/* Math rendering */
+.overline { text-decoration: overline; }
+sub { font-size: 0.75em; vertical-align: sub; line-height: 0; }
+sup { font-size: 0.75em; vertical-align: super; line-height: 0; }
 
 /* Native select/option dark dropdown — fixes white-on-white invisible text in Question Bank / PYQ filters */
 select {

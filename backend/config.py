@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     FRONTEND_URL: Optional[str] = ""
     GEMINI_API_KEY: Optional[str] = ""
     LLAMA_CLOUD_API_KEY: Optional[str] = ""
+    MISTRAL_API_KEY: Optional[str] = ""
     AUTH_PROVIDER_URL: str = "https://auth.example.com"
     AUTH_VERIFY_URL: str = "https://api.example.com/auth/verify"
 

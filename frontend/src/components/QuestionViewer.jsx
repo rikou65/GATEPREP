@@ -11,6 +11,7 @@ import {
   Star, Clock, Pencil, Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
+import { formatMathText, renderContentWithTables } from "@/lib/mathFormat";
 
 export default function QuestionViewer({ item, type = "question", onAttempted, onEdit, onDeleted, onFlagsChanged, hideNotes = false }) {
   const id = type === "pyq" ? item.pyq_id : item.question_id;
@@ -33,7 +34,8 @@ export default function QuestionViewer({ item, type = "question", onAttempted, o
     if (type === "question") {
       api.get(`${baseUrl}/notes`).then(r => setNotes(r.data?.data?.note_content || ""));
     }
-  }, [id]); // baseUrl is derived from id
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
 
   useEffect(() => { setFlags(item.flags || []); }, [item.flags]);
 
@@ -141,7 +143,7 @@ export default function QuestionViewer({ item, type = "question", onAttempted, o
           </Badge>
         )}
         <Badge variant="outline" className="mono text-[10px]">{item.question_type}</Badge>
-        {item.difficulty && <Badge variant="outline" className="mono text-[10px]">{item.difficulty}</Badge>}
+        {item.topic && <Badge variant="secondary" className="text-[10px] font-medium">{item.topic}</Badge>}
         {item.year && <Badge variant="outline" className="mono text-[10px]">GATE {item.year}</Badge>}
         {item.source && <Badge variant="outline" className="mono text-[10px]">{item.source}</Badge>}
         <div className="ml-auto flex items-center gap-1">
@@ -192,8 +194,8 @@ export default function QuestionViewer({ item, type = "question", onAttempted, o
         </div>
       </div>
 
-      <div className="text-base leading-relaxed whitespace-pre-wrap" data-testid="question-text">
-        {item.question_text}
+      <div className="text-base leading-relaxed" data-testid="question-text">
+        {renderContentWithTables(item.question_text)}
       </div>
 
       {item.question_type === "MCQ" && (
@@ -209,7 +211,7 @@ export default function QuestionViewer({ item, type = "question", onAttempted, o
               className={`flex items-start gap-3 p-3 border rounded-md cursor-pointer transition-colors ${optionState(i)}`}
             >
               <RadioGroupItem value={String(i)} disabled={submitted} className="mt-0.5" />
-              <span className="text-sm">{opt}</span>
+              <span className="text-sm">{formatMathText(opt)}</span>
             </label>
           ))}
         </RadioGroup>
@@ -234,7 +236,7 @@ export default function QuestionViewer({ item, type = "question", onAttempted, o
                     );
                   }}
                 />
-                <span className="text-sm">{opt}</span>
+                <span className="text-sm">{formatMathText(opt)}</span>
               </label>
             );
           })}
@@ -301,11 +303,11 @@ export default function QuestionViewer({ item, type = "question", onAttempted, o
 
       {showSolution && (
         <div
-          className="mt-4 p-4 bg-secondary/40 border-l-2 border-foreground rounded-r-md text-sm leading-relaxed whitespace-pre-wrap"
+          className="mt-4 p-4 bg-secondary/40 border-l-2 border-foreground rounded-r-md text-sm leading-relaxed"
           data-testid="solution-content"
         >
           <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground mb-2">Solution</div>
-          {result?.solution || item.solution}
+          {renderContentWithTables(result?.solution || item.solution)}
         </div>
       )}
 

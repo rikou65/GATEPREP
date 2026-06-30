@@ -26,7 +26,31 @@ except ImportError as e:
     logger.error(f"Failed to import parse_with_llama: {e}")
     parse_with_llama = None
 
+try:
+    from scripts.mistral_ocr import MistralOCRPipeline
+except ImportError as e:
+    logger.error(f"Failed to import MistralOCRPipeline: {e}")
+    MistralOCRPipeline = None
+
 router = APIRouter()
+
+async def run_mistral_ocr_background(job_id: str, file_path: str, subject_id: str, source: str = ""):
+    """Background task to run the Mistral OCR pipeline."""
+    try:
+        if MistralOCRPipeline:
+            pipeline = MistralOCRPipeline(file_path, subject_id, job_id=job_id, source=source)
+            await pipeline.process_pdf()
+            await db.import_jobs.update_one({"job_id": job_id}, {"$set": {"status": "COMPLETED", "completed_at": iso(now_utc())}})
+        else:
+            raise RuntimeError("MistralOCRPipeline is not available.")
+    except Exception as e:
+        logger.error(f"Mistral OCR pipeline failed for job {job_id}: {e}")
+        await db.import_jobs.update_one({"job_id": job_id}, {"$set": {"status": "FAILED", "error": str(e)}})
+    finally:
+        if os.path.exists(file_path):
+            try: os.remove(file_path)
+            except: pass
+
 
 async def run_llama_parser_background(job_id: str, file_path: str, subject_id: str):
     """Background task to run the LlamaParse + PyMuPDF Hybrid parser."""
@@ -65,7 +89,8 @@ async def run_ocr_pipeline_background(job_id: str, file_path: str, subject_id: s
 async def import_pdf(
     background_tasks: BackgroundTasks,
     subject_id: str = Form(...),
-    engine: str = Form("ocr"),
+    engine: str = Form("mistral"),
+    source: str = Form(""),
     file: Optional[UploadFile] = File(None),
     url: Optional[str] = Form(None),
     user=Depends(get_current_user)
@@ -90,7 +115,8 @@ async def import_pdf(
             
         await db.import_jobs.insert_one({
             "job_id": job_id, "user_id": user["user_id"], "filename": filename,
-            "engine": engine,
+            "engine": "mistral",
+            "source": source,
             "status": "PROCESSING", "progress": 0, "total_pages": 0,
             "created_at": iso(now_utc())
         })
@@ -98,18 +124,22 @@ async def import_pdf(
     except Exception as e:
         return err("upload_failed", str(e), 400)
 
-    if engine == "llama":
-        background_tasks.add_task(run_llama_parser_background, job_id, file_path, subject_id)
-    else:
-        background_tasks.add_task(run_ocr_pipeline_background, job_id, file_path, subject_id)
+    # Always use Mistral OCR pipeline
+    background_tasks.add_task(run_mistral_ocr_background, job_id, file_path, subject_id, source)
         
     return ok({"job_id": job_id})
 
 @router.get("/import/jobs")
 async def list_import_jobs(user=Depends(get_current_user)):
     """Fetch recent import jobs to show progress bars."""
-    docs = await db.import_jobs.find({"user_id": user["user_id"]}, {"_id": 0}).sort("created_at", -1).limit(5).to_list(5)
+    docs = await db.import_jobs.find({"user_id": user["user_id"]}, {"_id": 0}).sort("created_at", -1).limit(10).to_list(10)
     return ok(docs)
+
+@router.delete("/import/jobs/{job_id}")
+async def dismiss_import_job(job_id: str, user=Depends(get_current_user)):
+    """Permanently delete an import job record (dismiss error from UI)."""
+    await db.import_jobs.delete_one({"job_id": job_id, "user_id": user["user_id"]})
+    return ok({"dismissed": 1})
 
 @router.get("/staging")
 async def list_staging_items(user=Depends(get_current_user)):
@@ -124,6 +154,12 @@ async def discard_staging_item(staging_id: str, user=Depends(get_current_user)):
     if r.deleted_count == 0:
         return err("not_found", "Staging item not found", 404)
     return ok({"deleted": 1})
+
+@router.delete("/staging")
+async def clear_all_staging(user=Depends(get_current_user)):
+    """Wipe the entire staging queue. Use before re-ingesting a corrected PDF."""
+    result = await db.staging_questions.delete_many({})
+    return ok({"deleted": result.deleted_count})
 
 class ApproveSpecificRequest(BaseModel):
     staging_id: str
@@ -142,13 +178,15 @@ async def approve_specific_item(
         "user_id": user["user_id"],
         "subject_id": item["subject_id"],
         "topic_id": "TBD",
-        "question_type": "MCQ",
+        "topic": item.get("topic", ""),
+        "question_type": item.get("question_type", "MCQ"),
         "question_text": item.get("question_text", ""),
         "options": item.get("options", []),
         "correct_answer": item.get("correct_answer"),
         "solution": item.get("solution_text"),
-        "difficulty": "Medium",
-        "source": "GO-PDFs",
+        "difficulty": "",
+        "source": item.get("source", ""),
+        "tags": ([item["topic"]] if item.get("topic") else []),
         "created_at": iso(now_utc()),
         "updated_at": iso(now_utc())
     }
@@ -187,16 +225,18 @@ async def bulk_approve_staging_items(user=Depends(get_current_user)):
     
     for item in ready_items:
         base_doc = {
-            "user_id": user["user_id"], # Assigned to the admin who approves it
+            "user_id": user["user_id"],
             "subject_id": item["subject_id"],
-            "topic_id": "TBD", # Placeholder, ideally mapped during extraction
-            "question_type": "MCQ", # Defaulting, should ideally be extracted
+            "topic_id": "TBD",
+            "topic": item.get("topic", ""),
+            "question_type": item.get("question_type", "MCQ"),
             "question_text": item["question_text"],
             "options": item["options"],
             "correct_answer": item["correct_answer"],
             "solution": item["solution_text"],
-            "difficulty": "Medium",
-            "source": "GO-PDFs",
+            "difficulty": "",
+            "source": item.get("source", ""),
+            "tags": ([item["topic"]] if item.get("topic") else []),
             "created_at": iso(now_utc()),
             "updated_at": iso(now_utc())
         }

@@ -67,6 +67,7 @@ Make sure the repo contains the new config files we just generated:
    | `GOOGLE_DRIVE_REDIRECT_URI` | `https://<your-render-host>/api/drive/callback`  ← fill in after deploy gives you the URL |
    | `FRONTEND_URL` | `https://<your-vercel-host>`  ← fill in after Step 3 |
    | `AUTH_PROVIDER_URL` | `PLACEHOLDER_AUTH_PROVIDER_URL` |
+   | `MISTRAL_API_KEY` | Your Mistral AI API key — required for PDF OCR ingestion. Get one at https://console.mistral.ai/ |
 
 5. Hit **Save**, Render redeploys. Wait for green **Live** badge. Your URL is now `https://gate-os-backend-xxxx.onrender.com`.
 6. **Update Google Cloud Console**:
@@ -90,6 +91,8 @@ Make sure the repo contains the new config files we just generated:
    | Key | Value |
    |---|---|
    | `REACT_APP_BACKEND_URL` | `https://gate-os-backend-xxxx.onrender.com` (from Step 2.5) |
+
+   > **After Vite migration** (see `IMPLEMENTATION_PLAN.md` Phase 6): the env key changes to `VITE_BACKEND_URL` and the build output directory changes from `build/` to `dist/`. Update Vercel's Output Directory setting accordingly at that time.
 
 4. **Deploy**. ~2 minutes later you have `https://gate-study-os-yourname.vercel.app`.
 5. **Go back to Render** → update the `FRONTEND_URL` env var to this Vercel URL → redeploy.
@@ -146,7 +149,7 @@ If you don't have anything important on the preview, **skip this step entirely**
 
 - **Why Render and not Fly.io?** Fly is great but has a small free tier and credit-card requirement. Render's free web service is generous *and* the blueprint format is dead-simple.
 - **Why MongoDB Atlas and not a self-hosted Mongo on the same VM?** Free tier on Atlas, automatic backups, no ops. Self-hosting Mongo on a free-tier VM means you're babysitting it.
-- **Why not Cloudflare Pages for the frontend?** Vercel's React build pipeline is more battle-tested for CRA projects like ours.
+- **Why not Cloudflare Pages for the frontend?** Vercel's React build pipeline is more battle-tested for CRA projects like ours. Once the Vite migration (Phase 6) is done, Cloudflare Pages becomes a viable and faster alternative.
 
 ---
 
