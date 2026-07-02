@@ -12,6 +12,7 @@ import { useAuth } from "@/context/AuthContext";
 // first exchange already established the session. Tracking processed session_ids at module
 // scope survives the StrictMode remount.
 const processedSessionIds = new Set();
+const driveSyncKey = (userId) => (userId ? `driveSyncNeeded:${userId}` : null);
 
 export default function AuthCallback() {
   const navigate = useNavigate();
@@ -43,8 +44,10 @@ export default function AuthCallback() {
     (async () => {
       try {
         const r = await api.post("/auth/session", { code });
-        setUser(r.data?.data?.user || null);
-        localStorage.setItem("driveSyncNeeded", "true");
+        const user = r.data?.data?.user || null;
+        setUser(user);
+        const syncKey = driveSyncKey(user?.user_id);
+        if (syncKey) localStorage.setItem(syncKey, "true");
         window.location.href = "/dashboard";
       } catch (e) {
         console.error("Auth callback failed:", e);

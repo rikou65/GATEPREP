@@ -1,231 +1,89 @@
 # Contributing to GATEPREP
 
-First off — thanks for taking the time to contribute. This project is opinionated about a few things and relaxed about most. This document tells you which is which.
+This repo is optimized for correctness, tenant isolation, and maintainability.
+If you are a human contributor or another coding agent, use this file together
+with `ARCHITECTURE.md` and `IMPLEMENTATION_ROADMAP.md`.
 
----
+## Read These First
 
-## Table of Contents
+1. [ARCHITECTURE.md](./ARCHITECTURE.md)
+2. [IMPLEMENTATION_ROADMAP.md](./IMPLEMENTATION_ROADMAP.md)
+3. [OCR_PIPELINE.md](./OCR_PIPELINE.md) if you are touching OCR/staging
+4. [AGENTS.md](./AGENTS.md) if you are an AI coding agent working locally
 
-- [Code of Conduct](#code-of-conduct)
-- [Getting set up](#getting-set-up)
-- [Project conventions](#project-conventions)
-- [Branching & commits](#branching--commits)
-- [Pull request checklist](#pull-request-checklist)
-- [Testing](#testing)
-- [Architectural rules of thumb](#architectural-rules-of-thumb)
-- [Reporting bugs](#reporting-bugs)
-- [Proposing features](#proposing-features)
+## Local Setup
 
----
+Backend:
 
-## Code of Conduct
-
-Be kind. Assume good faith. Critique code, not people. That's the whole policy.
-
----
-
-## Getting set up
-
-See [`README.md`](./README.md#local-development) for the quick start. Two extra things contributors should do:
-
-1. **Read [`IMPLEMENTATION_PLAN.md`](./IMPLEMENTATION_PLAN.md)** — it explains what's being built, in what order, and why. If your PR conflicts with the active phase, talk to the maintainer first.
-2. **Read [`PRD.md`](./PRD.md)** — the living product spec. It's the source of truth for *what* the product is.
-
-Recommended tooling:
-- Python **3.12+** with `venv`
-- Node **20+** with `npm` (use `--legacy-peer-deps` on install due to CRA peer dep conflicts)
-- A MongoDB instance (local Docker is fine: `docker run -d -p 27017:27017 mongo:7`)
-- VS Code with the official Python, ESLint, Pylance, and Tailwind CSS IntelliSense extensions
-- A Mistral AI API key (required if working on the OCR pipeline — get one at https://console.mistral.ai/)
-
----
-
-## Project conventions
-
-### Frontend (React)
-
-- **Components:** functional only, no class components.
-- **Exports:** *named* exports for components (`export const QuestionViewer = ...`), *default* exports for pages (`export default function DashboardPage()`).
-- **Styling:** Tailwind utility-first. Reach for `@apply` only when a class string crosses ~8 utilities or appears in 3+ places.
-- **Components library:** use the existing shadcn primitives in `frontend/src/components/ui/` before adding new dependencies.
-- **Forms:** `react-hook-form` + `zod` resolvers. No raw `useState` form blobs in new code.
-- **Icons:** `lucide-react` only. No emoji-as-icons. No FontAwesome unless coordinated.
-- **API calls:** import the shared axios instance from `lib/api.js` — it already wires auth and base URL.
-- **Routing:** `react-router-dom` v7. Use `<Outlet>` for nested layouts.
-- **Test IDs:** **every interactive element gets a `data-testid`**, kebab-case, describing the function not the style:
-  ```jsx
-  <Button data-testid="question-submit-button" onClick={onSubmit}>Submit</Button>
-  ```
-
-### Backend (FastAPI)
-
-- **Schemas:** Pydantic v2, defined at the top of the route module or in `schemas/` (post-refactor).
-- **Route handlers:** thin. Business logic lives in helpers/services. If a handler is > 30 lines, extract.
-- **Timestamps:** always `datetime.now(timezone.utc)`. Never `datetime.utcnow()` (deprecated, naive).
-- **ObjectId:** never returned raw. Convert to `str` in response models.
-- **Multi-tenancy:** every database query that touches a user-owned collection **must** filter by `user_id`. No exceptions. Code review will reject otherwise.
-- **Errors:** raise `HTTPException` with explicit status + detail. Don't return `{"error": "..."}` from a 200.
-- **Env vars:** read via `os.environ.get('FOO')`. Never hardcode defaults for secrets/URLs — let it fail fast. Do NOT use the `settings` Pydantic object inside background tasks (worker context issue — causes `NameError`).
-- **Background tasks:** if a task needs a config value, pass it as a plain argument — don't rely on module-level `settings` in the task function.
-
-### Both
-
-- **No dead code.** Don't leave commented-out blocks "in case we need them". Git remembers.
-- **No backwards-compat shims** for code that hasn't shipped externally yet. Just change it.
-- **No over-engineering.** Helpers for one-time logic, abstractions for hypothetical futures — both rejected.
-
----
-
-## Branching & commits
-
-### Branches
-- `main` — always deployable.
-- `feat/<short-slug>` — new features.
-- `fix/<short-slug>` — bug fixes.
-- `refactor/<short-slug>` — internal restructures with no behaviour change.
-- `chore/<short-slug>` — deps, tooling, docs.
-
-### Commits — Conventional Commits
-
-```
-<type>(<optional-scope>): <imperative summary>
-
-<optional body explaining *why*, not *what*>
-```
-
-Allowed types: `feat`, `fix`, `refactor`, `perf`, `docs`, `style`, `test`, `chore`.
-
-Examples:
-- `feat(ocr): extract questions from PDF via Gemini`
-- `fix(pdf-viewer): prevent re-download on modal reopen`
-- `refactor(server): split drive routes into services/drive.py`
-- `docs: add IMPLEMENTATION_PLAN.md`
-
-Keep the summary ≤ 72 chars, imperative ("add" not "added"), no trailing period.
-
----
-
-## Pull request checklist
-
-Before opening a PR:
-
-- [ ] Branch is up to date with `main` (rebase, don't merge).
-- [ ] All new code follows the conventions above.
-- [ ] Tests added/updated for any behaviour change.
-- [ ] `pytest` passes locally: `cd backend && pytest -v`.
-- [ ] Frontend compiles clean: `cd frontend && npm start` — no new errors in webpack output.
-- [ ] If UI changed → screenshot in the PR description.
-- [ ] If new env var introduced → added to both `.env.example` files **and** to the env table in `README.md`.
-- [ ] If auth credentials changed → `memory/test_credentials.md` updated.
-- [ ] `PRD.md` / `CHANGELOG.md` updated if applicable.
-- [ ] Works in **Chrome, Firefox, and Brave** (Brave is our third-party-cookie canary — Drive features must be tested there).
-
-PR description template:
-
-```markdown
-## What
-One-sentence summary.
-
-## Why
-The user-facing or technical motivation.
-
-## How
-Bullet points of the approach. Mention any non-obvious decisions.
-
-## Screenshots
-(if UI)
-
-## Testing
-What you tested and how.
-
-## Checklist
-- [ ] Tests pass
-- [ ] Docs updated
-- [ ] Tested in Brave (if Drive-related)
-```
-
----
-
-## Testing
-
-### Backend
-
-```bash
+```powershell
 cd backend
-pytest -v                          # full suite
-pytest -v tests/test_gate_os_backend.py::test_attempt_records  # single test
-pytest -v -k "drive"               # by keyword
-pytest --cov=. --cov-report=html   # coverage (output in htmlcov/)
+& ../venv/Scripts/python.exe -m uvicorn server:app --host 127.0.0.1 --port 8001
 ```
 
-Write tests in `backend/tests/`. Pattern: one test file per route module. Use `pytest` fixtures for db setup and authenticated client.
+Frontend:
 
-### Frontend
+```powershell
+cd frontend
+node_modules/.bin/vite.cmd --host 127.0.0.1 --port 3000
+```
 
-For now, no Jest unit suite. We rely on:
-1. The screenshot/e2e testing tooling for flows.
-2. Manual QA across Chrome, Firefox, Brave.
+## Core Engineering Rules
 
-If you add component tests, use `@testing-library/react` — colocated as `Component.test.jsx`.
+- All user-owned reads and writes must be scoped by `user_id`
+- No `is_admin` role model anywhere
+- No `difficulty` field anywhere
+- No stale `/api/admin/*` additions; staging/OCR live under `/api/data/*`
+- Use `VITE_*` frontend env variables, not `REACT_APP_*`
+- Keep QBank and PYQs separate
+- Keep question/PYQ solutions inline
+- Keep route handlers thin when touching backend code
 
-### What to test
-- **Always:** new API endpoints (happy path + at least one error path).
-- **Always:** complex business logic (scoring, scheduling, duplicate detection).
-- **Sometimes:** UI components — only if they encode non-trivial logic (forms with validation, the canvas PDF viewer).
-- **Never:** trivial CRUD that's already covered by Pydantic + the route framework.
+## Frontend Rules
 
----
+- Use the shared API client from `frontend/src/lib/api.js`
+- Prefer existing shadcn primitives before adding new UI libraries
+- Keep server state separate from UI-only state
+- Playlist UI must preserve active video, watched state, and queue state
+- Do not render raw LaTeX strings directly when existing math rendering helpers
+  are already in use for the relevant surface
 
-## Architectural rules of thumb
+## Backend Rules
 
-These are the patterns that keep this codebase boring (in a good way):
+- Validate request payloads with canonical schemas
+- Avoid route-local duplicate schemas when shared ones exist
+- Verify ownership through parent entities where needed:
+  - playlist video operations must verify video ownership through the parent playlist
+  - resource operations must verify resource ownership
+- Prefer repository/service extraction when route logic becomes stateful or
+  cross-cutting
 
-1. **`/api` prefix on every backend route.** Non-negotiable — the Kubernetes ingress depends on it.
-2. **`REACT_APP_BACKEND_URL` for every frontend → backend call.** No hardcoded URLs, ever. (Will change to `VITE_BACKEND_URL` after Vite migration.)
-3. **Drive files belong to the user.** We use `drive.file` scope. Never request broader scopes.
-4. **PYQs and Questions are separate collections.** Don't unify them. See README → Engineering Notes for the reasoning.
-5. **No combined "subject completion %".** Per-topic Solved/Remaining/Accuracy only.
-6. **Solutions render inline, never in a modal.**
-7. **The PDF viewer uses `pdfjs-dist` on a canvas.** Don't replace it with a Drive iframe; Brave will break it.
-8. **The PDF modal uses a React Portal.** Don't change the mount point.
-9. **`is None` is the correct PEP-8 idiom.** The linter occasionally flags it. Ignore the linter, follow PEP-8.
-10. **`server.py` stays monolithic until ~2k LOC.** See `IMPLEMENTATION_PLAN.md` Phase 9.
-11. **No `difficulty` field anywhere.** It was removed deliberately — do not re-add it. Users can use the `tags` array.
-12. **Math rendering goes through `mathFormat.jsx`.** All question text and option text in both staging and live views must be passed through `formatMathText()` or `renderContentWithTables()`. Never render raw LaTeX strings as plain text.
-13. **OCR background tasks read env directly.** Never pass or import `settings` into `mistral_ocr.py` or any background task — use `os.environ.get()` to avoid worker-context `NameError`.
-14. **Staging ID normalization is mandatory.** Any new extraction pipeline must call `normalize_id()` before DB lookups to prevent duplicate records from `Q.1` vs `1` style mismatches.
+## Testing Expectations
 
----
+Frontend:
 
-## Reporting bugs
+```powershell
+cd frontend
+npm run build
+```
 
-Open an issue with:
+Backend:
 
-- **Environment:** Browser + OS, frontend host, backend host.
-- **Steps to reproduce:** numbered, deterministic.
-- **Expected vs actual:** what should happen vs what does.
-- **Screenshots / video:** if visual.
-- **Console + network logs:** for frontend issues.
-- **Backend logs:** for 5xx errors — `tail -n 100 /var/log/supervisor/backend.*.log` in the dev pod.
-- **Reproducible on Brave?** Important for Drive-related issues.
+```powershell
+cd backend
+pytest -v
+```
 
----
+When changing playlists, include regression coverage for:
 
-## Proposing features
+- resume to the correct video and timestamp
+- watched videos staying watched when other videos start
+- queue centering/visibility behavior
+- notes autosave not firing on unchanged blur
+- ownership checks on video progress and notes
 
-1. Skim [`IMPLEMENTATION_PLAN.md`](./IMPLEMENTATION_PLAN.md) — it may already be on the roadmap.
-2. Open an issue titled `[Feature] <one-line summary>`.
-3. Include:
-   - **User story:** "As a <user>, I want <action>, so that <outcome>."
-   - **Why it matters:** signal, not vibes.
-   - **Out-of-scope:** what you're explicitly not asking for.
-   - **Rough sketch:** screens, API shape, anything visual helps.
-4. Wait for a 👍 from the maintainer before starting work — saves you from building something we won't merge.
+## Documentation Rules
 
----
-
-## Questions?
-
-Open a Discussion or ping the maintainer. The worst question is the one you didn't ask while you were stuck for two hours.
-
-Happy hacking. 🎯
+- Update `README.md` if local setup or source-of-truth docs change
+- Update `ARCHITECTURE.md` if domain boundaries or major pain points change
+- Update `IMPLEMENTATION_ROADMAP.md` when priorities or phase content change
+- Update `OCR_PIPELINE.md` if OCR routes, staging flow, or extraction behavior changes

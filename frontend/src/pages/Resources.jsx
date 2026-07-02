@@ -12,6 +12,7 @@ import PdfCanvasViewer from "@/components/PdfCanvasViewer";
 import Layout from "@/components/Layout";
 
 const TYPES = ["Books", "Notes", "Question Banks", "PYQ Collections", "Formula Sheets", "Reference Material"];
+const driveSyncKey = (userId) => (userId ? `driveSyncNeeded:${userId}` : null);
 
 function formatSize(bytes) {
   if (!bytes) return "—";
@@ -51,8 +52,8 @@ export default function Resources() {
       .map(s => ({ subject: s, items: bySubject.get(s.subject_id) }));
   }, [items, subjects]);
 
-  const runSync = async () => {
-    if (!driveStatus?.connected) {
+  const runSync = async (statusOverride = driveStatus) => {
+    if (!statusOverride?.connected) {
       toast.error("Connect Google Drive first (Settings)");
       return;
     }
@@ -67,7 +68,7 @@ export default function Resources() {
         toast.success(`Restored ${d.synced} file${d.synced === 1 ? "" : "s"} from your Drive`);
         load();
       } else {
-        toast.info("Drive is in sync \u2014 nothing new to import.");
+        toast.info("Drive is in sync — nothing new to import.");
       }
     } catch (e) {
       toast.error("Drive sync failed: " + (e?.response?.data?.error?.message || e.message));
@@ -137,9 +138,10 @@ export default function Resources() {
         api.post("/drive/refresh").catch(() => {});
 
         // Sync only on first visit after login or explicit user action.
-        if (localStorage.getItem("driveSyncNeeded") === "true") {
-          localStorage.removeItem("driveSyncNeeded");
-          runSync();
+        const syncKey = driveSyncKey(status.user_id);
+        if (syncKey && localStorage.getItem(syncKey) === "true") {
+          localStorage.removeItem(syncKey);
+          runSync(status);
         }
       }
     });
@@ -172,7 +174,7 @@ export default function Resources() {
       setUploadFile(null);
       if (fileRef.current) fileRef.current.value = "";
       load();
-      runSync();
+      runSync(driveStatus);
     } catch (e) {
       toast.error(e?.response?.data?.error?.message || "Upload failed");
     }

@@ -14,7 +14,7 @@ export default function QuestionBank() {
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
   const [filter, setFilter] = useState({
-    subject_id: "", topic_id: "", difficulty: "", question_type: "",
+    subject_id: "", topic_id: "", question_type: "",
     attempted: "", result: "", flag: "",
   });
   const [topics, setTopics] = useState([]);

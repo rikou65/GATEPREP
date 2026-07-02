@@ -5,15 +5,22 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 
 // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || "";
+const GOOGLE_LOGIN_REDIRECT_URI = import.meta.env.VITE_GOOGLE_LOGIN_REDIRECT_URI || `${window.location.origin}/auth/callback`;
+const driveSyncKey = (userId) => (userId ? `driveSyncNeeded:${userId}` : null);
+
 export default function Login() {
   const [loading, setLoading] = useState(false);
   const { setUser } = useAuth();
 
   const handleSignIn = () => {
-    const clientId = "522307348549-g2f69df6qu1uqn28uqf70sq51uvm42bl.apps.googleusercontent.com";
-    const redirectUri = encodeURIComponent("http://127.0.0.1:3000/auth/callback");
+    if (!GOOGLE_CLIENT_ID) {
+      alert("Google sign-in is not configured for this environment.");
+      return;
+    }
+    const redirectUri = encodeURIComponent(GOOGLE_LOGIN_REDIRECT_URI);
     const scope = encodeURIComponent("openid email profile");
-    window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code&scope=${scope}&access_type=offline&prompt=consent`;
+    window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${GOOGLE_CLIENT_ID}&redirect_uri=${redirectUri}&response_type=code&scope=${scope}&access_type=offline&prompt=consent`;
   };
 
   const handleDevLogin = async () => {
@@ -21,12 +28,14 @@ export default function Login() {
     try {
       const r = await api.post("/auth/dev-login");
       if (r.data?.success) {
-        setUser(r.data.data.user);
-        localStorage.setItem("driveSyncNeeded", "true");
+        const user = r.data.data.user;
+        setUser(user);
+        const syncKey = driveSyncKey(user?.user_id);
+        if (syncKey) localStorage.removeItem(syncKey);
         window.location.href = "/dashboard";
       }
     } catch {
-      alert("Local login failed. Make sure your backend is running on port 8000.");
+      alert("Local login failed. Make sure your backend is running on port 8001.");
     } finally {
       setLoading(false);
     }

@@ -96,12 +96,12 @@ def pytest_sessionstart(session):
     
     # Launch uvicorn
     uvicorn_proc = subprocess.Popen(
-        [sys.executable, "-m", "uvicorn", "server:app", "--host", "127.0.0.1", "--port", "8000"],
+        [sys.executable, "-m", "uvicorn", "server:app", "--host", "127.0.0.1", "--port", "8001"],
         cwd=str(backend_dir)
     )
     
     # 4. Wait for the server to be responsive
-    api_url = "http://127.0.0.1:8000/api/health"
+    api_url = "http://127.0.0.1:8001/api/health"
     retries = 80
     connected = False
     for i in range(retries):
@@ -129,3 +129,4 @@ def pytest_sessionfinish(session, exitstatus):
         except subprocess.TimeoutExpired:
             uvicorn_proc.kill()
         print("FastAPI server stopped.")
+

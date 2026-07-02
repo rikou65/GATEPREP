@@ -50,7 +50,7 @@ export default function StagingQueue() {
   const handleBulkApprove = async () => {
     setProcessing(true);
     try {
-      await api.post("/admin/staging/bulk-approve");
+      await api.post("/data/staging/bulk-approve");
       toast.success("Successfully approved ready items");
       fetchStaging();
     } catch (e) {
@@ -62,7 +62,7 @@ export default function StagingQueue() {
 
   const handleDiscard = async (id) => {
     try {
-      await api.delete(`/admin/staging/${id}`);
+      await api.delete(`/data/staging/${id}`);
       setItems(items.filter(i => i.staging_id !== id));
       toast.success("Item discarded");
     } catch (e) {
@@ -72,7 +72,7 @@ export default function StagingQueue() {
 
   const handleApproveSingle = async (item) => {
     try {
-      await api.post("/admin/staging/approve-specific", { staging_id: item.staging_id });
+      await api.post("/data/staging/approve-specific", { staging_id: item.staging_id });
       setItems(items.filter(i => i.staging_id !== item.staging_id));
       toast.success("Item manually approved");
     } catch (e) {
@@ -82,7 +82,7 @@ export default function StagingQueue() {
 
   const dismissJob = async (jobId) => {
     try {
-      await api.delete(`/admin/import/jobs/${jobId}`);
+      await api.delete(`/data/import/jobs/${jobId}`);
     } catch (e) {
       // ignore — remove from UI regardless
     }

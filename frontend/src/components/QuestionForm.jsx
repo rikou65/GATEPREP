@@ -28,7 +28,6 @@ export default function QuestionForm({ isPyq = false, initial = null, onSaved, o
         ? (typeof initial.correct_answer === "string" ? initial.correct_answer : JSON.stringify(initial.correct_answer))
         : "",
     solution: initial?.solution || "",
-    difficulty: initial?.difficulty || "Medium",
     source: initial?.source || (isPyq ? "GATE" : "User"),
     year: initial?.year || (isPyq ? new Date().getFullYear() : null),
   }));
@@ -86,10 +85,6 @@ export default function QuestionForm({ isPyq = false, initial = null, onSaved, o
         <select value={form.question_type} onChange={e => setForm({ ...form, question_type: e.target.value })}
           className="h-10 px-3 text-sm bg-transparent border border-border rounded-md">
           <option>MCQ</option><option>MSQ</option><option>NAT</option>
-        </select>
-        <select value={form.difficulty} onChange={e => setForm({ ...form, difficulty: e.target.value })}
-          className="h-10 px-3 text-sm bg-transparent border border-border rounded-md">
-          <option>Easy</option><option>Medium</option><option>Hard</option>
         </select>
         {isPyq && (
           <Input type="number" placeholder="Year" value={form.year || ""} onChange={e => setForm({ ...form, year: parseInt(e.target.value || "0") || null })} />

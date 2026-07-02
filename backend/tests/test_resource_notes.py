@@ -20,7 +20,7 @@ import pytest
 import requests
 
 BASE_URL: str = os.environ.get(
-    "REACT_APP_BACKEND_URL", "http://localhost:8000"
+    "VITE_BACKEND_URL", "http://localhost:8001"
 ).rstrip("/")
 API: str = f"{BASE_URL}/api"
 
@@ -393,3 +393,4 @@ class TestPhaseARegression:
             assert "important" in rf.json()["data"]["flags"]
         finally:
             requests.delete(f"{API}/questions/{qid}", headers=primary_headers)
+
