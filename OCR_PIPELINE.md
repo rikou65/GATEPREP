@@ -1,12 +1,29 @@
 # GATEPREP — OCR and Staging Pipeline
 
-This document explains the current OCR ingestion flow so another coding agent
-can work on it without reverse-engineering the pipeline from code.
+This document explains the current OCR ingestion flow so contributors can work
+on it without reverse-engineering the pipeline from code.
 
 ## Purpose
 
 The OCR pipeline converts uploaded GATE study PDFs into structured staging
 documents that a user can review and approve into the live question bank.
+
+## AI Used
+
+The OCR pipeline is AI-powered and is not a manual process.
+
+Current provider and usage:
+
+- **Mistral OCR** for raw OCR extraction from uploaded PDF pages
+- **Mistral structured parsing** for converting extracted content into question,
+  solution, and concept records
+
+In practice, the pipeline uses Mistral for:
+
+- OCR of PDF page content
+- extraction of structured question data
+- extraction of solutions
+- extraction of topic/concept content for staging
 
 ## Current Flow
 
@@ -86,6 +103,10 @@ The OCR flow is designed around:
 - page-level OCR extraction
 - structured parsing into typed question/solution/concept records
 - normalization and merge of split question/solution sections
+
+The current OCR implementation depends on AI extraction rather than manual
+templated parsing, because the imported PDFs vary in structure, formatting,
+math notation, and layout.
 
 Important behavioral requirements:
 
