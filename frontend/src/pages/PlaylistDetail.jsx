@@ -1,10 +1,19 @@
-import React, { useEffect, useRef, useState, useMemo } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { Link, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { CheckCircle2, Circle, ArrowLeft, ChevronRight, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 import Layout from "@/components/Layout";
+
+function formatDuration(seconds) {
+  if (!seconds) return "0m";
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  if (h === 0) return `${m}m`;
+  if (m === 0) return `${h}h`;
+  return `${h}h ${m}m`;
+}
 
 const findResumeIndex = (videos) => {
   let bestIdx = 0;
@@ -36,18 +45,14 @@ export default function PlaylistDetail() {
   const playerRef = useRef(null);
   const trackRef = useRef(null);
   const queueRef = useRef(null);
+  const playerContainerRef = useRef(null);
 
   const [notes, setNotes] = useState("");
   const [lastSavedNotes, setLastSavedNotes] = useState("");
   const [savingNote, setSavingNote] = useState(false);
-  const [subjects, setSubjects] = useState([]);
 
   const load = () => api.get(`/playlists/${id}`).then(r => setPlaylist(r.data?.data));
   useEffect(() => { load(); }, [id]);
-
-  useEffect(() => {
-    api.get("/subjects").then(r => setSubjects(r.data?.data || []));
-  }, []);
 
   // Resume to the best video on initial load
   useEffect(() => {
@@ -75,12 +80,12 @@ export default function PlaylistDetail() {
       .catch(() => { setNotes(""); setLastSavedNotes(""); });
   }, [active?.video_id]);
 
-  // Scroll the queue to keep the active card centered
+  // Scroll the vertical queue to keep the active row visible
   useEffect(() => {
     if (!queueRef.current || !playlist?.videos?.length) return;
-    const cards = queueRef.current.querySelectorAll('[data-testid^="video-row-"]');
-    if (cards[activeIdx]) {
-      cards[activeIdx].scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+    const rows = queueRef.current.querySelectorAll('[data-testid^="video-row-"]');
+    if (rows[activeIdx]) {
+      rows[activeIdx].scrollIntoView({ behavior: "smooth", block: "nearest" });
     }
   }, [activeIdx]);
 
@@ -200,12 +205,6 @@ export default function PlaylistDetail() {
     } catch { toast.error("Failed"); }
   };
 
-  const subjectName = useMemo(() => {
-    if (!playlist || !subjects.length) return "General Subject";
-    const found = subjects.find(s => s.subject_id === playlist.subject_id);
-    return found ? found.name : "General Subject";
-  }, [playlist, subjects]);
-
   // Key moments and active recall memos removed per requirements
 
   if (!playlist) return (
@@ -233,52 +232,27 @@ export default function PlaylistDetail() {
 
   return (
     <Layout title="Playlist Detail">
-      <div className="space-y-6">
-        <Link to="/playlists" className="text-xs mono text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
-          <ArrowLeft className="w-3 h-3" /> Playlists
-        </Link>
-
-        <div className="space-y-3">
+      <div className="flex flex-col" style={{ height: 'calc(100vh - 5rem)' }}>
+        <div className="shrink-0 space-y-3 mb-4">
+          <Link to="/playlists" className="text-xs mono text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
+            <ArrowLeft className="w-3 h-3" /> Playlists
+          </Link>
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">{playlist.title}</h1>
-          <div className="text-xs text-muted-foreground mono">{playlist.channel_title}</div>
-          <div className="flex items-center gap-3" data-testid="playlist-progress-bar">
-            <div className="flex-1 h-2 bg-secondary rounded overflow-hidden">
-              <div className="h-full bg-emerald-500 transition-all" style={{ width: `${pct}%` }} />
-            </div>
-            <div className="text-xs mono whitespace-nowrap">
-              <span className="text-foreground font-semibold">{completed}</span>
-              <span className="text-muted-foreground">/{total}</span>
-              <span className="text-muted-foreground ml-2">{pct}%</span>
-            </div>
-          </div>
         </div>
 
-        <div className="grid grid-cols-12 gap-6 items-start">
-          {/* Left Column (60%) */}
-          <div className="col-span-12 xl:col-span-7 space-y-6">
-            <div className="aspect-video w-full rounded-3xl overflow-hidden border border-border bg-black">
+        <div className="flex-1 min-h-0 grid grid-cols-12 gap-6 items-stretch">
+          {/* Left Column */}
+          <div className="col-span-12 xl:col-span-7 flex flex-col min-h-0">
+            <div ref={playerContainerRef} className="aspect-video w-full rounded-3xl overflow-hidden border border-border bg-black shrink-0">
               <div id="yt-player" className="w-full h-full" />
             </div>
             {active && (
-              <div className="space-y-4">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-mono text-muted-foreground uppercase tracking-widest">
-                      Active Video
-                    </span>
-                    <span className="px-2 py-0.5 bg-primary/10 border border-primary/20 rounded-full text-[10px] text-primary">
-                      {subjectName}
-                    </span>
-                  </div>
-                  <h2 className="text-xl font-bold text-foreground mt-1" data-testid="active-video-title">
-                    {active.title}
-                  </h2>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {playlist.channel_title}
-                  </p>
-                </div>
+              <div className="flex flex-col min-h-0 mt-4 space-y-3">
+                <h2 className="text-xl font-bold text-foreground" data-testid="active-video-title">
+                  {active.title}
+                </h2>
 
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 flex-wrap">
                   {activeDone ? (
                     <Button size="sm" variant="outline" onClick={() => unmark(activeIdx)} data-testid="unmark-btn">
                       <RotateCcw className="w-3.5 h-3.5 mr-1" /> Unmark
@@ -308,47 +282,45 @@ export default function PlaylistDetail() {
                 </div>
               </div>
             )}
+          </div>
 
-            {/* Playlist Queue with Scrollbar */}
-            <div className="space-y-3 pt-2">
-              <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Playlist Queue</h3>
+          {/* Right Column */}
+          <div className="col-span-12 xl:col-span-5 flex flex-col min-h-0 gap-3">
+            {/* Queue section — shows 3 rows at a time */}
+            <div className="flex flex-col min-h-0 border border-border rounded-2xl p-4 flex-[1]">
+              <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground shrink-0">Playlist Queue</h3>
               <div
                 ref={queueRef}
-                className="flex gap-4 overflow-x-auto pb-4 pt-1 snap-x snap-mandatory scrollbar-thin scrollbar-thumb-muted"
+                className="flex-1 min-h-0 overflow-y-auto mt-3 space-y-1 scrollbar-thin scrollbar-thumb-muted"
               >
-                  {playlist.videos.map((v, i) => {
-                    const isActive = i === activeIdx;
-                    const isDone = !!v.progress?.completed;
-                    return (
-                      <div
-                        key={v.video_id}
-                        onClick={() => setActiveIdx(i)}
-                        className={`min-w-[220px] max-w-[220px] snap-start border rounded-2xl p-4 cursor-pointer transition-all duration-200 ${
-                          isActive
-                            ? "bg-secondary/50 border-primary"
-                            : "bg-card/20 border-border hover:bg-card/40 hover:border-muted-foreground"
-                        }`}
-                        data-testid={`video-row-${v.video_id}`}
-                      >
-                        <div className="flex justify-between items-start gap-1">
-                          <span className="text-[10px] font-mono text-muted-foreground">#{String(i + 1).padStart(2, "0")}</span>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              isDone ? unmark(i) : markWatched(i);
-                            }}
-                            data-testid={`toggle-watched-${v.video_id}`}
-                          >
-                            {isDone ? (
-                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                            ) : (
-                              <Circle className="w-3.5 h-3.5 text-muted-foreground hover:text-foreground" />
-                            )}
-                          </button>
-                        </div>
-                        <p className="text-xs font-medium mt-1 line-clamp-2 text-foreground/90">{v.title}</p>
+                {playlist.videos.map((v, i) => {
+                  const isActive = i === activeIdx;
+                  const isDone = !!v.progress?.completed;
+                  const thumbnail = `https://img.youtube.com/vi/${v.youtube_video_id}/default.jpg`;
+                  return (
+                    <div
+                      key={v.video_id}
+                      onClick={() => setActiveIdx(i)}
+                      className={`flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer transition-colors ${
+                        isActive
+                          ? "bg-secondary/40 border border-primary/30"
+                          : "hover:bg-card/40 border border-transparent"
+                      }`}
+                      data-testid={`video-row-${v.video_id}`}
+                    >
+                      <span className="text-[10px] font-mono text-muted-foreground shrink-0 w-7 text-right">
+                        #{String(i + 1).padStart(2, "0")}
+                      </span>
+                      <img
+                        src={thumbnail}
+                        alt=""
+                        className="w-16 h-12 rounded object-cover shrink-0 bg-secondary"
+                        loading="lazy"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-medium leading-tight line-clamp-2 text-foreground/90">{v.title}</p>
                         {v.progress?.watch_percentage > 0 && (
-                          <div className="mt-2 h-1 bg-secondary rounded-full overflow-hidden">
+                          <div className="h-1 bg-secondary rounded-full overflow-hidden mt-1.5">
                             <div
                               className={`h-full ${isDone ? "bg-emerald-400" : "bg-primary"}`}
                               style={{ width: `${v.progress.watch_percentage}%` }}
@@ -356,33 +328,41 @@ export default function PlaylistDetail() {
                           </div>
                         )}
                       </div>
-                    );
-                  })}
-                </div>
-            </div>
-          </div>
-
-          {/* Right Column (40%) */}
-          <div className="col-span-12 xl:col-span-5 space-y-6">
-            <div className="border border-border rounded-3xl p-6 bg-card/25 backdrop-blur-xl sticky top-24">
-              {/* Personal Notes */}
-              <div className="space-y-2 h-full flex flex-col">
-                <div className="flex justify-between items-center">
-                  <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-                    Video Notes
-                  </h3>
-                  <span className="text-[10px] font-mono text-muted-foreground">
-                    {savingNote ? "Saving..." : "Auto-saved"}
-                  </span>
-                </div>
-                <textarea
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  onBlur={saveNotes}
-                  placeholder="Capture key equations, proofs, or notes for this video..."
-                  className="w-full h-[32rem] bg-white/5 border border-border rounded-2xl p-4 text-sm text-foreground placeholder:text-muted-foreground/30 focus:ring-1 focus:ring-primary/50 resize-none outline-none"
-                />
+                      <span className="text-[10px] font-mono text-muted-foreground shrink-0">
+                        {formatDuration(v.duration)}
+                      </span>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); isDone ? unmark(i) : markWatched(i); }}
+                        className="shrink-0"
+                        data-testid={`toggle-watched-${v.video_id}`}
+                      >
+                        {isDone ? (
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                        ) : (
+                          <Circle className="w-3.5 h-3.5 text-muted-foreground hover:text-foreground" />
+                        )}
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
+            </div>
+
+            {/* Notes Panel (always visible) */}
+            <div className="flex flex-col min-h-0 border border-border rounded-2xl p-4 flex-[1]">
+              <div className="flex justify-between items-center shrink-0">
+                <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Video Notes</h3>
+                <span className="text-[10px] font-mono text-muted-foreground">
+                  {savingNote ? "Saving..." : "Auto-saved"}
+                </span>
+              </div>
+              <textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                onBlur={saveNotes}
+                placeholder="Capture key equations, proofs, or notes for this video..."
+                className="w-full flex-1 min-h-0 mt-3 bg-white/5 border border-border rounded-2xl p-4 text-sm text-foreground placeholder:text-muted-foreground/30 focus:ring-1 focus:ring-primary/50 resize-none outline-none"
+              />
             </div>
           </div>
         </div>
