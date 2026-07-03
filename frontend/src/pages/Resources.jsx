@@ -52,7 +52,7 @@ export default function Resources() {
       .map(s => ({ subject: s, items: bySubject.get(s.subject_id) }));
   }, [items, subjects]);
 
-  const runSync = async (statusOverride = driveStatus) => {
+  const runSync = async (statusOverride) => {
     if (!statusOverride?.connected) {
       toast.error("Connect Google Drive first (Settings)");
       return;

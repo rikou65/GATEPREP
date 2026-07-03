@@ -8,6 +8,15 @@ import { ListVideo, Plus, Play, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import Layout from "@/components/Layout";
 
+function formatDuration(seconds) {
+  if (!seconds) return "0m";
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  if (h === 0) return `${m}m`;
+  if (m === 0) return `${h}h`;
+  return `${h}h ${m}m`;
+}
+
 export default function Playlists() {
   const [playlists, setPlaylists] = useState([]);
   const [subjects, setSubjects] = useState([]);
@@ -22,8 +31,12 @@ export default function Playlists() {
     if (!form.youtube_url || !form.subject_id) { toast.error("Fill all fields"); return; }
     setLoading(true);
     try {
-      await api.post("/playlists/import", form);
-      toast.success("Playlist imported");
+      const r = await api.post("/playlists/import", form);
+      if (r.data?.data?.already_exists) {
+        toast.info("Playlist already imported");
+      } else {
+        toast.success("Playlist imported");
+      }
       setOpen(false); setForm({ youtube_url: "", subject_id: "" }); load();
     } catch (e) {
       toast.error(e?.response?.data?.error?.message || "Import failed");
@@ -124,7 +137,7 @@ export default function Playlists() {
                             <div className="h-full bg-emerald-500 transition-all" style={{ width: `${pct}%` }} />
                           </div>
                           <div className="text-xs text-muted-foreground mono flex items-center justify-between">
-                            <span>{p.completed_videos || 0}/{p.video_count} videos · {pct}%</span>
+                            <span>{p.completed_videos || 0}/{p.video_count} videos · {formatDuration(p.watched_duration || 0)}/{formatDuration(p.total_duration || 0)} · {pct}%</span>
                             <button onClick={() => remove(p.playlist_id)} data-testid={`delete-pl-${p.playlist_id}`} className="hover:text-red-500">
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>

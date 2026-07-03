@@ -104,14 +104,58 @@ def _build_video_docs(playlist_id: str, videos: List[Dict[str, Any]], durations:
 
 from pydantic import BaseModel
 
+from schemas import VideoNotesIn, VideoProgressIn
+
 class PlaylistImportIn(BaseModel):
     youtube_url: str
     subject_id: str
 
 
-class VideoProgressIn(BaseModel):
-    watch_percentage: float
-    watch_time: int = 0
+async def _verify_video_ownership(user_id: str, video_id: str) -> bool:
+    v = await db.videos.find_one({"video_id": video_id}, {"_id": 0, "playlist_id": 1})
+    if not v:
+        return False
+    p = await db.playlists.find_one({"playlist_id": v["playlist_id"], "user_id": user_id}, {"_id": 0})
+    return bool(p)
+
+
+async def _refresh_video_durations(playlist_id: str, user_id: str) -> None:
+    token = await _get_youtube_token(user_id)
+    if not token:
+        return
+    videos = await db.videos.find(
+        {"playlist_id": playlist_id, "duration": {"$in": [None, 0]}},
+        {"_id": 0, "youtube_video_id": 1}
+    ).to_list(2000)
+    if not videos:
+        return
+    yt_ids = [v["youtube_video_id"] for v in videos]
+    try:
+        durations = await _yt_fetch_video_durations(yt_ids, token)
+    except Exception:
+        return
+    for yt_id, dur in durations.items():
+        if dur > 0:
+            await db.videos.update_one(
+                {"playlist_id": playlist_id, "youtube_video_id": yt_id},
+                {"$set": {"duration": dur}}
+            )
+
+
+def _compute_duration_stats(vids, prog):
+    pmap = {x["video_id"]: x for x in prog}
+    total = sum(v.get("duration", 0) for v in vids)
+    watched = 0
+    completed = 0
+    for v in vids:
+        p = pmap.get(v["video_id"])
+        dur = v.get("duration", 0)
+        if p and p.get("completed"):
+            watched += dur
+            completed += 1
+        elif p:
+            watched += min(p.get("watch_time", 0), dur)
+    return total, watched, completed
 
 
 @router.post("/playlists/import")
@@ -124,7 +168,7 @@ async def import_playlist(body: PlaylistImportIn, user=Depends(get_current_user)
         return err("youtube_not_connected", "Connect YouTube in Settings first", 400)
     existing = await db.playlists.find_one({"user_id": user["user_id"], "youtube_playlist_id": pid}, {"_id": 0})
     if existing:
-        return ok(existing)
+        return ok({**existing, "already_exists": True})
     try:
         meta = await _yt_fetch_playlist_meta(pid, token)
         if not meta:
@@ -166,18 +210,38 @@ async def my_playlists(subject_id: Optional[str] = None, user=Depends(get_curren
             "pipeline": [
                 {"$match": {"$expr": {"$and": [
                     {"$eq": ["$user_id", "$$user_id"]},
-                    {"$in": ["$video_id", "$$vid_ids"]},
-                    {"$eq": ["$completed", True]}
+                    {"$in": ["$video_id", "$$vid_ids"]}
                 ]}}}
             ],
             "as": "prog"
         }},
-        {"$addFields": {
-            "completed_videos": {"$size": "$prog"}
-        }},
-        {"$project": {"_id": 0, "vids": 0, "prog": 0}}
     ]
     docs = await db.playlists.aggregate(pipeline).to_list(500)
+    needs_refresh = []
+    for doc in docs:
+        doc.pop("_id", None)
+        vids = doc.pop("vids", [])
+        prog = doc.pop("prog", [])
+        total, watched, completed = _compute_duration_stats(vids, prog)
+        doc["total_duration"] = total
+        doc["watched_duration"] = watched
+        doc["completed_videos"] = completed
+        if total == 0 and doc.get("video_count", 0) > 0:
+            needs_refresh.append(doc["playlist_id"])
+
+    if needs_refresh:
+        import asyncio
+        await asyncio.gather(*[_refresh_video_durations(pid, uid) for pid in needs_refresh])
+        for doc in docs:
+            if doc["playlist_id"] not in needs_refresh:
+                continue
+            vids = await db.videos.find({"playlist_id": doc["playlist_id"]}, {"_id": 0}).to_list(2000)
+            prog = await db.video_progress.find({"user_id": uid, "video_id": {"$in": [v["video_id"] for v in vids]}}, {"_id": 0}).to_list(2000)
+            total, watched, completed = _compute_duration_stats(vids, prog)
+            doc["total_duration"] = total
+            doc["watched_duration"] = watched
+            doc["completed_videos"] = completed
+
     return ok(docs)
 
 
@@ -187,11 +251,14 @@ async def get_playlist(playlist_id: str, user=Depends(get_current_user)):
     if not p:
         return err("not_found", "Playlist not found", 404)
     videos = await db.videos.find({"playlist_id": playlist_id}, {"_id": 0}).sort("position", 1).to_list(2000)
+    if any(v.get("duration", 0) == 0 for v in videos):
+        await _refresh_video_durations(playlist_id, user["user_id"])
+        videos = await db.videos.find({"playlist_id": playlist_id}, {"_id": 0}).sort("position", 1).to_list(2000)
     vid_ids = [v["video_id"] for v in videos]
     prog = await db.video_progress.find({"user_id": user["user_id"], "video_id": {"$in": vid_ids}}, {"_id": 0}).to_list(2000)
     pmap = {x["video_id"]: x for x in prog}
     for v in videos:
-        v["progress"] = pmap.get(v["video_id"], {"watch_percentage": 0, "completed": False, "watch_time": 0})
+        v["progress"] = pmap.get(v["video_id"], {"watch_percentage": 0, "completed": False, "watch_time": 0, "last_watched_at": None})
     p["videos"] = videos
     return ok(p)
 
@@ -204,6 +271,7 @@ async def delete_playlist(playlist_id: str, user=Depends(get_current_user)):
     vids = await db.videos.find({"playlist_id": playlist_id}, {"_id": 0, "video_id": 1}).to_list(2000)
     vid_ids = [v["video_id"] for v in vids]
     await db.video_progress.delete_many({"user_id": user["user_id"], "video_id": {"$in": vid_ids}})
+    await db.video_notes.delete_many({"user_id": user["user_id"], "video_id": {"$in": vid_ids}})
     await db.videos.delete_many({"playlist_id": playlist_id})
     await db.playlists.delete_one({"playlist_id": playlist_id})
     return ok({"deleted": True})
@@ -211,7 +279,21 @@ async def delete_playlist(playlist_id: str, user=Depends(get_current_user)):
 
 @router.post("/videos/{video_id}/progress")
 async def update_video_progress(video_id: str, body: VideoProgressIn, user=Depends(get_current_user)):
-    completed = body.watch_percentage >= 90
+    if not await _verify_video_ownership(user["user_id"], video_id):
+        return err("not_found", "Not found", 404)
+
+    if body.completed is not None:
+        completed = body.completed
+    else:
+        existing = await db.video_progress.find_one(
+            {"user_id": user["user_id"], "video_id": video_id},
+            {"completed": 1},
+        )
+        if existing and existing.get("completed") is True:
+            completed = True
+        else:
+            completed = body.watch_percentage >= 90
+
     await db.video_progress.update_one(
         {"user_id": user["user_id"], "video_id": video_id},
         {"$set": {"watch_percentage": body.watch_percentage, "completed": completed,
@@ -223,18 +305,18 @@ async def update_video_progress(video_id: str, body: VideoProgressIn, user=Depen
     return ok({"watch_percentage": body.watch_percentage, "completed": completed})
 
 
-class VideoNotesIn(BaseModel):
-    note_content: str
-
-
 @router.get("/videos/{video_id}/notes")
 async def get_video_notes(video_id: str, user=Depends(get_current_user)):
+    if not await _verify_video_ownership(user["user_id"], video_id):
+        return err("not_found", "Not found", 404)
     n = await db.video_notes.find_one({"user_id": user["user_id"], "video_id": video_id}, {"_id": 0})
     return ok(n or {"note_content": "", "video_id": video_id})
 
 
 @router.post("/videos/{video_id}/notes")
 async def save_video_notes(video_id: str, body: VideoNotesIn, user=Depends(get_current_user)):
+    if not await _verify_video_ownership(user["user_id"], video_id):
+        return err("not_found", "Not found", 404)
     await db.video_notes.update_one(
         {"user_id": user["user_id"], "video_id": video_id},
         {"$set": {"note_content": body.note_content, "updated_at": iso(now_utc())},

@@ -6,14 +6,39 @@ import { CheckCircle2, Circle, ArrowLeft, ChevronRight, RotateCcw } from "lucide
 import { toast } from "sonner";
 import Layout from "@/components/Layout";
 
+const findResumeIndex = (videos) => {
+  let bestIdx = 0;
+  let bestIsInProgress = false;
+  let bestTime = null;
+  videos.forEach((v, i) => {
+    const pct = v.progress?.watch_percentage || 0;
+    const t = v.progress?.last_watched_at;
+    const isInProgress = pct > 0 && pct < 100 && !v.progress?.completed;
+    if (isInProgress && (!bestIsInProgress || (t && bestTime && t > bestTime))) {
+      bestIdx = i;
+      bestIsInProgress = true;
+      bestTime = t;
+    } else if (!bestIsInProgress) {
+      if (t && (!bestTime || t > bestTime)) {
+        bestIdx = i;
+        bestTime = t;
+      }
+    }
+  });
+  return bestIdx;
+};
+
 export default function PlaylistDetail() {
   const { id } = useParams();
   const [playlist, setPlaylist] = useState(null);
   const [activeIdx, setActiveIdx] = useState(0);
+  const [resumed, setResumed] = useState(false);
   const playerRef = useRef(null);
   const trackRef = useRef(null);
+  const queueRef = useRef(null);
 
   const [notes, setNotes] = useState("");
+  const [lastSavedNotes, setLastSavedNotes] = useState("");
   const [savingNote, setSavingNote] = useState(false);
   const [subjects, setSubjects] = useState([]);
 
@@ -24,31 +49,54 @@ export default function PlaylistDetail() {
     api.get("/subjects").then(r => setSubjects(r.data?.data || []));
   }, []);
 
+  // Resume to the best video on initial load
+  useEffect(() => {
+    if (playlist?.videos?.length && !resumed) {
+      const idx = findResumeIndex(playlist.videos);
+      setActiveIdx(idx);
+      setResumed(true);
+    }
+  }, [playlist, resumed]);
+
   const active = playlist?.videos?.[activeIdx];
 
   useEffect(() => {
     if (!active) {
       setNotes("");
+      setLastSavedNotes("");
       return;
     }
     api.get(`/videos/${active.video_id}/notes`)
-      .then(r => setNotes(r.data?.data?.note_content || ""))
-      .catch(() => setNotes(""));
+      .then(r => {
+        const c = r.data?.data?.note_content || "";
+        setNotes(c);
+        setLastSavedNotes(c);
+      })
+      .catch(() => { setNotes(""); setLastSavedNotes(""); });
   }, [active?.video_id]);
 
+  // Scroll the queue to keep the active card centered
+  useEffect(() => {
+    if (!queueRef.current || !playlist?.videos?.length) return;
+    const cards = queueRef.current.querySelectorAll('[data-testid^="video-row-"]');
+    if (cards[activeIdx]) {
+      cards[activeIdx].scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+    }
+  }, [activeIdx]);
+
   const saveNotes = async () => {
-    if (!active) return;
+    if (!active || notes === lastSavedNotes) return;
     setSavingNote(true);
     try {
       await api.post(`/videos/${active.video_id}/notes`, { note_content: notes });
-      toast.success("Notes saved");
+      setLastSavedNotes(notes);
     } catch {
       toast.error("Failed to save notes");
     }
     setSavingNote(false);
   };
 
-  // Load YouTube IFrame API and (re)initialise player when active video changes
+  // Destroy and recreate YouTube player on active video change to prevent stale callbacks
   useEffect(() => {
     if (!playlist?.videos?.length) return;
     if (!window.YT) {
@@ -57,21 +105,31 @@ export default function PlaylistDetail() {
       document.head.appendChild(tag);
     }
     const initPlayer = () => {
-      const vid = playlist.videos[activeIdx]?.youtube_video_id;
-      if (!vid || !window.YT?.Player) return;
+      const video = playlist.videos[activeIdx];
+      if (!video?.youtube_video_id || !window.YT?.Player) return;
+
       if (playerRef.current) {
-        try { playerRef.current.loadVideoById(vid); return; } catch (_err) { /* fall through to recreate */ }
+        try { playerRef.current.destroy(); } catch (_err) { /* ignore */ }
+        playerRef.current = null;
       }
+
+      const seekTime = video.progress?.watch_time && !video.progress?.completed
+        ? video.progress.watch_time
+        : 0;
+
       playerRef.current = new window.YT.Player("yt-player", {
-        videoId: vid,
-        playerVars: { rel: 0, modestbranding: 1 },
+        videoId: video.youtube_video_id,
+        playerVars: { rel: 0, modestbranding: 1, start: seekTime },
         events: {
+          onReady: () => {
+            if (seekTime > 0) {
+              playerRef.current.seekTo(seekTime, true);
+            }
+          },
           onStateChange: (e) => {
-            // 1 = playing, 0 = ended
             if (e.data === 1) startTracking();
             else stopTracking();
             if (e.data === 0) {
-              // auto-mark complete on natural end
               syncProgress(100, true);
             }
           },
@@ -80,7 +138,7 @@ export default function PlaylistDetail() {
     };
     if (window.YT?.Player) initPlayer();
     else window.onYouTubeIframeAPIReady = initPlayer;
-    return () => stopTracking();
+    return () => { stopTracking(); };
     // eslint-disable-next-line
   }, [playlist?.playlist_id, activeIdx]);
 
@@ -106,13 +164,11 @@ export default function PlaylistDetail() {
         watch_percentage: pct,
         watch_time: typeof watchTime === "number" ? watchTime : 0,
       });
-      // optimistic local update
       setPlaylist((prev) => {
         if (!prev) return prev;
-        const next = { ...prev, videos: prev.videos.map((v, i) => i === activeIdx
-          ? { ...v, progress: { ...(v.progress || {}), watch_percentage: pct, completed: pct >= 90 } }
+        return { ...prev, videos: prev.videos.map((v, i) => i === activeIdx
+          ? { ...v, progress: { ...(v.progress || {}), watch_percentage: pct } }
           : v) };
-        return next;
       });
     } catch (_err) { /* silent */ }
   };
@@ -120,7 +176,7 @@ export default function PlaylistDetail() {
   const markWatched = async (idx) => {
     const video = playlist.videos[idx];
     try {
-      await api.post(`/videos/${video.video_id}/progress`, { watch_percentage: 100, watch_time: video.duration || 0 });
+      await api.post(`/videos/${video.video_id}/progress`, { watch_percentage: 100, watch_time: video.duration || 0, completed: true });
       setPlaylist((prev) => ({
         ...prev,
         videos: prev.videos.map((v, i) => i === idx
@@ -134,7 +190,7 @@ export default function PlaylistDetail() {
   const unmark = async (idx) => {
     const video = playlist.videos[idx];
     try {
-      await api.post(`/videos/${video.video_id}/progress`, { watch_percentage: 0, watch_time: 0 });
+      await api.post(`/videos/${video.video_id}/progress`, { watch_percentage: 0, watch_time: 0, completed: false });
       setPlaylist((prev) => ({
         ...prev,
         videos: prev.videos.map((v, i) => i === idx
@@ -253,53 +309,56 @@ export default function PlaylistDetail() {
               </div>
             )}
 
-            {/* Horizontal Playlist Queue */}
+            {/* Playlist Queue with Scrollbar */}
             <div className="space-y-3 pt-2">
               <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Playlist Queue</h3>
-              <div className="flex gap-4 overflow-x-auto pb-4 pt-1 snap-x scrollbar-thin scrollbar-thumb-muted">
-                {playlist.videos.map((v, i) => {
-                  const isActive = i === activeIdx;
-                  const isDone = !!v.progress?.completed;
-                  return (
-                    <div
-                      key={v.video_id}
-                      onClick={() => setActiveIdx(i)}
-                      className={`min-w-[220px] max-w-[220px] snap-start border rounded-2xl p-4 cursor-pointer transition-all duration-200 ${
-                        isActive
-                          ? "bg-secondary/50 border-primary"
-                          : "bg-card/20 border-border hover:bg-card/40 hover:border-muted-foreground"
-                      }`}
-                      data-testid={`video-row-${v.video_id}`}
-                    >
-                      <div className="flex justify-between items-start gap-1">
-                        <span className="text-[10px] font-mono text-muted-foreground">#{String(i + 1).padStart(2, "0")}</span>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            isDone ? unmark(i) : markWatched(i);
-                          }}
-                          data-testid={`toggle-watched-${v.video_id}`}
-                        >
-                          {isDone ? (
-                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                          ) : (
-                            <Circle className="w-3.5 h-3.5 text-muted-foreground hover:text-foreground" />
-                          )}
-                        </button>
-                      </div>
-                      <p className="text-xs font-medium mt-1 line-clamp-2 text-foreground/90">{v.title}</p>
-                      {v.progress?.watch_percentage > 0 && (
-                        <div className="mt-2 h-1 bg-secondary rounded-full overflow-hidden">
-                          <div
-                            className={`h-full ${isDone ? "bg-emerald-400" : "bg-primary"}`}
-                            style={{ width: `${v.progress.watch_percentage}%` }}
-                          />
+              <div
+                ref={queueRef}
+                className="flex gap-4 overflow-x-auto pb-4 pt-1 snap-x snap-mandatory scrollbar-thin scrollbar-thumb-muted"
+              >
+                  {playlist.videos.map((v, i) => {
+                    const isActive = i === activeIdx;
+                    const isDone = !!v.progress?.completed;
+                    return (
+                      <div
+                        key={v.video_id}
+                        onClick={() => setActiveIdx(i)}
+                        className={`min-w-[220px] max-w-[220px] snap-start border rounded-2xl p-4 cursor-pointer transition-all duration-200 ${
+                          isActive
+                            ? "bg-secondary/50 border-primary"
+                            : "bg-card/20 border-border hover:bg-card/40 hover:border-muted-foreground"
+                        }`}
+                        data-testid={`video-row-${v.video_id}`}
+                      >
+                        <div className="flex justify-between items-start gap-1">
+                          <span className="text-[10px] font-mono text-muted-foreground">#{String(i + 1).padStart(2, "0")}</span>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              isDone ? unmark(i) : markWatched(i);
+                            }}
+                            data-testid={`toggle-watched-${v.video_id}`}
+                          >
+                            {isDone ? (
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                            ) : (
+                              <Circle className="w-3.5 h-3.5 text-muted-foreground hover:text-foreground" />
+                            )}
+                          </button>
                         </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
+                        <p className="text-xs font-medium mt-1 line-clamp-2 text-foreground/90">{v.title}</p>
+                        {v.progress?.watch_percentage > 0 && (
+                          <div className="mt-2 h-1 bg-secondary rounded-full overflow-hidden">
+                            <div
+                              className={`h-full ${isDone ? "bg-emerald-400" : "bg-primary"}`}
+                              style={{ width: `${v.progress.watch_percentage}%` }}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
             </div>
           </div>
 

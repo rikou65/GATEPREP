@@ -69,6 +69,7 @@ class PlaylistImportIn(BaseModel):
 class VideoProgressIn(BaseModel):
     watch_percentage: float = Field(ge=0, le=100)
     watch_time: int = Field(default=0, ge=0)
+    completed: Optional[bool] = None
 
 
 class VideoNotesIn(BaseModel):
