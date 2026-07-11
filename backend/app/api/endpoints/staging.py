@@ -22,7 +22,7 @@ router = APIRouter()
 
 
 def _repos(request: Request):
-    job_repo, _, _ = _repos(request)
+    db = request.app.state.db
     return (
         ImportJobRepository(db),
         StagingQuestionRepository(db),

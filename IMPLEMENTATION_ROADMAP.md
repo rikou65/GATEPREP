@@ -196,7 +196,7 @@ maintainability, and then scale.
   - frontend raw API calls stay in endpoint modules
   - frontend endpoint modules are consumed through feature hooks
   - backend runtime layers do not use direct Mongo collection access
-  - docs do not mention stale `server:app`
+  - docs do not mention deleted backend entrypoints
 
 ---
 
