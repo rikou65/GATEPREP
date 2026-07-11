@@ -2,6 +2,7 @@ from __future__ import annotations
 
 """GATEPREP — FastAPI application factory."""
 
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -33,7 +34,7 @@ client, db = create_db_client(settings)
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="GATEPREP")
+    app = FastAPI(title="GATEPREP", lifespan=lifespan)
     app.state.settings = settings
     app.state.db = db
     app.state.client = client
@@ -41,7 +42,6 @@ def create_app() -> FastAPI:
     _setup_middleware(app)
     _mount_routes(app)
     _setup_error_handlers(app)
-    _setup_lifespan(app)
 
     return app
 
@@ -116,35 +116,37 @@ def _setup_error_handlers(app: FastAPI) -> None:
         return response
 
 
-def _setup_lifespan(app: FastAPI) -> None:
-    @app.on_event("startup")
-    async def on_startup():
-        from app.bootstrap.seed import seed_data
-        from app.bootstrap import migrations
-        from app.bootstrap.migrations import (
-            _migrate_v2_split_subjects,
-            _migrate_per_user_content,
-            _ensure_runtime_indexes,
-            _purge_global_staging_records,
-        )
-        migrations.configure(db)
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    from app.bootstrap.seed import seed_data
+    from app.bootstrap import migrations
+    from app.bootstrap.migrations import (
+        _migrate_v2_split_subjects,
+        _migrate_per_user_content,
+        _ensure_runtime_indexes,
+        _purge_global_staging_records,
+    )
 
-        if await db.subjects.count_documents({}) == 0:
-            result = await seed_data(db)
-            logger.info(f"Seeded GATE syllabus: {result}")
+    app_db = app.state.db
+    migrations.configure(app_db)
 
-        await _migrate_v2_split_subjects()
-        await _migrate_per_user_content()
-        await _purge_global_staging_records()
+    if await app_db.subjects.count_documents({}) == 0:
+        result = await seed_data(app_db)
+        logger.info(f"Seeded GATE syllabus: {result}")
 
-        oauth_state_repo = OAuthStateRepository(db)
-        await oauth_state_repo.ensure_index()
-        await _ensure_runtime_indexes()
-        logger.info("GATEPREP new app started")
+    await _migrate_v2_split_subjects()
+    await _migrate_per_user_content()
+    await _purge_global_staging_records()
 
-    @app.on_event("shutdown")
-    async def on_shutdown():
-        client.close()
+    oauth_state_repo = OAuthStateRepository(app_db)
+    await oauth_state_repo.ensure_index()
+    await _ensure_runtime_indexes()
+    logger.info("GATEPREP new app started")
+
+    try:
+        yield
+    finally:
+        app.state.client.close()
 
 
 app = create_app()

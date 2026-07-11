@@ -1,13 +1,15 @@
 import os
 import sys
-import time
-import subprocess
 import asyncio
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
+from urllib.parse import urlsplit
+
 import pytest
 import requests
+from fastapi.testclient import TestClient
 from motor.motor_asyncio import AsyncIOMotorClient
+from pymongo.errors import PyMongoError
 
 # Setup sys.path to include backend/
 backend_dir = Path(__file__).parent.parent
@@ -20,8 +22,8 @@ TEST_USER_TOKEN = "test_user_token_xyz_123"
 TEST_PRIMARY_TOKEN = "test_primary_token_xyz_123"
 TEST_SECONDARY_TOKEN = "test_secondary_token_xyz_123"
 
-# Start uvicorn process reference
-uvicorn_proc = None
+test_client = None
+_original_requests = {}
 
 async def seed_test_users():
     from app.core.config import Settings
@@ -29,6 +31,9 @@ async def seed_test_users():
     from app.core.time import iso, now_utc
     from app.bootstrap.seed import seed_data
     from app.bootstrap import migrations
+
+    os.environ.setdefault("MONGO_URL", "mongodb://localhost:27017")
+    os.environ.setdefault("DB_NAME", "gateprep_test")
 
     settings = Settings(_env_file=str(backend_dir / ".env"))
     
@@ -41,6 +46,7 @@ async def seed_test_users():
         tlsAllowInvalidCertificates=True,
         serverSelectionTimeoutMS=5000
     )
+    await client.admin.command("ping")
     db = client[settings.DB_NAME]
     migrations.configure(db)
     await seed_data(db)
@@ -145,53 +151,61 @@ async def ensure_test_content(db, user_id: str) -> None:
         })
 
 def pytest_sessionstart(session):
-    global uvicorn_proc
+    global test_client, _original_requests
     
     # 1. Seed database with test users and sessions
-    asyncio.run(seed_test_users())
+    try:
+        asyncio.run(seed_test_users())
+    except PyMongoError as exc:
+        pytest.exit(
+            "MongoDB is not available for backend tests. Start MongoDB on "
+            "mongodb://localhost:27017 or set MONGO_URL/DB_NAME before running "
+            f"pytest. Original error: {exc}",
+            returncode=2,
+        )
     
     # 2. Set tokens in environment variables
     os.environ["AUTH_TOKEN"] = TEST_AUTH_TOKEN
     os.environ["USER_TOKEN"] = TEST_USER_TOKEN
     os.environ["PRIMARY_TOKEN"] = TEST_PRIMARY_TOKEN
     os.environ["SECONDARY_TOKEN"] = TEST_SECONDARY_TOKEN
-    
-    # 3. Start the uvicorn server in the background
-    print("\nStarting local FastAPI server for integration tests...")
-    
-    # Launch uvicorn
-    uvicorn_proc = subprocess.Popen(
-        [sys.executable, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8001"],
-        cwd=str(backend_dir)
-    )
-    
-    # 4. Wait for the server to be responsive
-    api_url = "http://127.0.0.1:8001/api/health"
-    retries = 80
-    connected = False
-    for i in range(retries):
-        try:
-            r = requests.get(api_url, timeout=1)
-            if r.status_code == 200:
-                connected = True
-                print("FastAPI server started successfully and is responsive!")
-                break
-        except requests.RequestException:
-            pass
-        time.sleep(0.5)
-        
-    if not connected:
-        uvicorn_proc.kill()
-        raise RuntimeError("Failed to start FastAPI server for integration tests.")
+
+    from app.main import app
+
+    test_client = TestClient(app)
+    test_client.__enter__()
+    _original_requests = {
+        "request": requests.request,
+        "get": requests.get,
+        "post": requests.post,
+        "delete": requests.delete,
+    }
+
+    def _client_request(method: str, url: str, **kwargs):
+        parsed = urlsplit(str(url))
+        path = parsed.path or "/"
+        if parsed.query and "params" not in kwargs:
+            path = f"{path}?{parsed.query}"
+
+        kwargs.pop("timeout", None)
+        if "allow_redirects" in kwargs:
+            kwargs["follow_redirects"] = kwargs.pop("allow_redirects")
+
+        return test_client.request(method, path, **kwargs)
+
+    requests.request = _client_request
+    requests.get = lambda url, **kwargs: _client_request("GET", url, **kwargs)
+    requests.post = lambda url, **kwargs: _client_request("POST", url, **kwargs)
+    requests.delete = lambda url, **kwargs: _client_request("DELETE", url, **kwargs)
 
 def pytest_sessionfinish(session, exitstatus):
-    global uvicorn_proc
-    if uvicorn_proc:
-        print("\nStopping local FastAPI server...")
-        uvicorn_proc.terminate()
-        try:
-            uvicorn_proc.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            uvicorn_proc.kill()
-        print("FastAPI server stopped.")
+    global test_client, _original_requests
+
+    for name, original in _original_requests.items():
+        setattr(requests, name, original)
+    _original_requests = {}
+
+    if test_client:
+        test_client.__exit__(None, None, None)
+        test_client = None
 
