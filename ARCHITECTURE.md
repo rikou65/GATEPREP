@@ -23,13 +23,13 @@ GATEPREP is a personal, multi-tenant study platform for GATE CSE preparation.
 - OCR: Mistral OCR + structured parse into staging documents (tenant-isolated in Phase 2)
 - Architecture: Layered — endpoints → services → repositories → MongoDB; integrations for external providers
 
-## Current Pain Points
+## Current Focus Areas
 
 - Backend runtime layers now obey endpoints → services → repositories → MongoDB.
 - Frontend server access is centralized in `frontend/src/api/endpoints/*`; pages consume wrappers/hooks.
 - Some large frontend screens still own substantial UI orchestration state.
-- Playlist resume, queue state, and player-progress synchronization are currently unreliable. (resolved in Phase 1 playlist fixes)
-- Docs and live code have drifted on routes, env names, and local ports. (partially resolved in Phase 2 — login URL now server-generated)
+- Playlist resume, queue, and progress behavior are fixed and should stay covered by regressions.
+- Docs are current for active routes, local ports, auth flow, and dependency setup.
 
 ## Current Architecture
 

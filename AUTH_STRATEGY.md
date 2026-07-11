@@ -17,8 +17,7 @@ independent of the login provider.
 | YouTube data access | Google YouTube OAuth tokens | Authorize YouTube data access |
 
 **Critical rule:** Supabase Google provider tokens are **never** used for Drive or
-YouTube access. They may lack the correct scopes, may lack refresh tokens, and
-may behave differently depending on Supabase configuration.
+YouTube access. They may lack the correct scopes or refresh tokens.
 
 ## 3. Auth Boundaries
 
@@ -234,12 +233,11 @@ async def get_current_user(
 
 Both paths return `CurrentUser(user_id=..., email=..., auth_provider=...)`.
 
-## 10. Dev-Login Transition
+## 10. Dev Login
 
 - Dev-login remains available **only** when `ENVIRONMENT=development`.
 - It returns an internal `user_id` through the same `get_current_user` interface.
 - It is **disabled in production**.
-- During early refactor, dev-login does not require a Supabase test user.
 
 ## 11. Frontend Auth Flow
 
@@ -305,18 +303,18 @@ ENVIRONMENT=development
 ## 14. Regression Test Checklist
 
 - [ ] Legacy session cookie still authenticates
-- [ ] Supabase JWT authenticates
-- [ ] Drive `/connect-url` works with Supabase token
-- [ ] Drive callback resolves user from state, not JWT
+- [x] Supabase JWT authenticates
+- [x] Drive `/connect-url` works with Supabase token
+- [x] Drive callback resolves user from state, not JWT
 - [ ] Drive refresh token is encrypted
-- [ ] YouTube `/connect-url` works with Supabase token
-- [ ] YouTube callback resolves user from state, not JWT
+- [x] YouTube `/connect-url` works with Supabase token
+- [x] YouTube callback resolves user from state, not JWT
 - [ ] YouTube refresh token is encrypted
-- [ ] Supabase email/password user can connect Drive/YouTube
-- [ ] Supabase Google provider user can connect Drive/YouTube
-- [ ] Legacy user auto-linked by verified email keeps same `user_id` and tokens
+- [x] Supabase email/password user can connect Drive/YouTube
+- [x] Supabase Google provider user can connect Drive/YouTube
+- [x] Legacy user auto-linked by verified email keeps same `user_id` and tokens
 - [ ] Unverified Supabase email does not auto-link
 - [ ] Disconnect removes only current user's token document
-- [ ] Resource streaming still works
-- [ ] YouTube playlist import still works
+- [x] Resource streaming still works
+- [x] YouTube playlist import still works
 - [ ] Dev-login only works in development

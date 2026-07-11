@@ -156,7 +156,8 @@ Current local reality:
 │   │   └── tasks/               (background workers placeholder)
 │   ├── tests/
 │   ├── scripts/
-│   └── requirements.txt
+│   ├── requirements.txt
+│   └── requirements-dev.txt
 ├── frontend/
 │   ├── src/
 │   │   ├── api/                 (typed client, query keys, endpoint modules)
@@ -215,6 +216,7 @@ Examples:
 
 ### Auth
 - `POST /api/auth/session`
+- `POST /api/auth/supabase-session`
 - `POST /api/auth/dev-login`
 - `GET /api/auth/me`
 
@@ -251,6 +253,20 @@ Examples:
 ## Local Development
 
 ### Backend
+
+Install runtime dependencies:
+
+```powershell
+cd backend
+../venv/Scripts/python.exe -m pip install -r requirements.txt
+```
+
+Install test and lint tools when needed:
+
+```powershell
+cd backend
+../venv/Scripts/python.exe -m pip install -r requirements-dev.txt
+```
 
 ```powershell
 cd backend
@@ -289,8 +305,6 @@ Example `frontend/.env`:
 VITE_BACKEND_URL=http://127.0.0.1:8001
 VITE_SUPABASE_URL=
 VITE_SUPABASE_ANON_KEY=
-VITE_GOOGLE_CLIENT_ID=  (deprecated — login URL now built server-side via /auth/google-url)
-VITE_GOOGLE_LOGIN_REDIRECT_URI=http://127.0.0.1:3000/auth/callback  (deprecated — login redirect managed server-side)
 ```
 
 ### Backend common variables
@@ -320,6 +334,9 @@ For descriptions and current examples, check the `.env.example` files directly.
 
 - [ARCHITECTURE.md](./ARCHITECTURE.md)  
   Current domains, technical shape, and pain points.
+
+- [AUTH_STRATEGY.md](./AUTH_STRATEGY.md)  
+  Supabase Auth, legacy fallback, and separate Drive/YouTube OAuth boundaries.
 
 - [IMPLEMENTATION_ROADMAP.md](./IMPLEMENTATION_ROADMAP.md)  
   Active roadmap and execution order.

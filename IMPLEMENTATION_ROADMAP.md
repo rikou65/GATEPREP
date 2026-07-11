@@ -1,6 +1,6 @@
 # GATEPREP — Implementation Roadmap
 
-> **Note:** Localhost testing by the user is not yet done. All refactors need manual verification on localhost before they can be considered fully complete.
+> **Current verification:** The refactor and dependency cleanup have passed localhost manual testing. Re-test localhost after future backend/frontend behavior changes.
 
 ## Summary
 
@@ -17,7 +17,7 @@ maintainability, and then scale.
 - [x] Ignore generated cache folders like `.vite/`
 - [x] Keep large PDF source folders (`GATE_OVERFLOW/`, `UNACADEMY/`) out of git
 - [x] Create a backup branch before architecture refactor (`backup-before-refactor-20260705`)
-- [ ] Remove generated cache folders from local worktree as needed
+- [x] Remove generated cache folders from local worktree as needed
 - [x] Update docs to match live reality:
   - Vite is the active frontend toolchain
   - `VITE_BACKEND_URL` is canonical
@@ -36,10 +36,10 @@ maintainability, and then scale.
 - [x] Fix frontend route drift:
   - replace stale `/admin/*` frontend calls with `/data/*`
   - change OCR import success navigation from `/admin/staging` to `/data/staging`
-- [x] Fix Resources Drive false popup: (completed)
-  - remove stale React-state dependency in `runSync` (completed)
-  - scope `driveSyncNeeded` by `user_id` (completed)
-  - do not set Drive sync needed on dev-login unless Drive is actually connected (completed)
+- [x] Fix Resources Drive false popup:
+  - remove stale React-state dependency in `runSync`
+  - scope `driveSyncNeeded` by `user_id`
+  - do not set Drive sync needed on dev-login unless Drive is actually connected
 - [x] Remove remaining `difficulty` UI/state from Question Bank and Question Form
 - [x] Fix local config consistency:
   - `frontend/src/lib/api.ts` fallback matches local backend `8001`
@@ -48,23 +48,18 @@ maintainability, and then scale.
   - Supabase Google login is configured through Supabase client env
   - legacy Google login URL is built server-side
   - backend env examples include login and YouTube redirect URI coverage
-- [x] Fix playlist correctness and resume flow: (completed)
-  - stop stale player callbacks from writing progress to the wrong video after switching active videos (completed)
-  - ensure playback/progress sync always targets the currently active `video_id` (completed)
-  - reopen a playlist on the most recently in-progress or most recently watched video instead of always index `0` (completed)
-  - restore saved `watch_time` when reopening a video (completed)
-  - stop saved progress from being immediately overwritten by a fresh `0%` playback start (completed)
-  - keep manually marked watched videos watched until the user explicitly unmarks them (completed)
-- [x] Fix playlist notes UX: (completed)
-  - do not save notes on blur when content is unchanged (completed)
-  - do not show `Notes saved` for no-op autosaves (completed)
-  - keep autosave feedback quiet and stateful instead of toast-heavy (completed)
-- [x] Fix playlist queue behavior: (completed)
-  - treat the queue as a controlled 3-card carousel, not a raw horizontal scroller (completed)
-  - keep the active video card centered when possible (completed)
-  - auto-shift the queue when `Next Video` activates a card outside the visible 3-card window (completed)
-  - make manual scrolling snap back to valid 3-card windows (completed)
-  - replace browser-like double-click queue shifting with deterministic one-step movement (completed)
+- [x] Fix playlist correctness and resume flow:
+  - progress writes always target the active `video_id`
+  - playlists reopen on the most relevant in-progress or recently watched video
+  - saved `watch_time` is restored without being overwritten by a fresh playback start
+  - manually marked watched videos stay watched until explicitly unmarked
+- [x] Fix playlist notes UX:
+  - unchanged blur events do not autosave or show save toasts
+  - autosave feedback is quiet and stateful
+- [x] Fix playlist queue behavior:
+  - queue behaves as a controlled 3-card carousel
+  - active video stays centered when possible
+  - next/manual navigation snaps to valid queue windows
 
 ---
 
@@ -72,26 +67,19 @@ maintainability, and then scale.
 
 **Goal:** close current security gaps before the large refactor.
 
-- [x] Make staging fully tenant-scoped: (completed)
-  - store `user_id` on `import_jobs`, `staging_questions`, `topic_concepts`, and future `ocr_images` (completed)
-  - filter list, delete, clear, approve-specific, and bulk-approve by `user_id` (completed)
-  - prevent approving or deleting another user’s staging item (completed)
-- [x] Fix IDOR gaps: (completed)
-  - `create_mistake` must fetch question with `user_id` (completed)
-  - video progress must verify `video_id` ownership through the parent playlist before writes (completed)
-  - video notes must verify `video_id` ownership through the parent playlist before reads and writes (completed)
-  - analytics joins must avoid counting or exposing another user’s content (completed)
-- [x] Harden OAuth: (completed)
-  - replace raw `user_id` OAuth state with random, expiring, session-bound state records (completed)
-  - apply to Drive and YouTube OAuth (completed)
-- [x] Harden uploads and URL imports: (completed)
-  - validate extension, MIME type, and PDF magic bytes (completed)
-  - add OCR upload size limit (completed)
-  - block localhost/private-network/non-HTTP(S) URL imports and oversized responses (completed)
-- [x] Harden production settings: (completed)
-  - remove `tlsAllowInvalidCertificates=True` outside local development (completed)
-  - use secure cookies in production (completed)
-  - add CSP, HSTS, and audit logging for sensitive actions (completed: HSTS, CSP/PP; audit logging pending)
+- [x] Make staging fully tenant-scoped:
+  - store and filter OCR/staging records by `user_id`
+  - prevent approving, deleting, or clearing another user's staging data
+- [x] Fix IDOR gaps:
+  - ownership checks for mistakes, playlist progress, video notes, and analytics joins
+- [x] Harden OAuth:
+  - random, expiring, single-use state records for login, Drive, and YouTube OAuth
+- [x] Harden uploads and URL imports:
+  - PDF validation, upload size limits, private-network blocking, and response size limits
+- [x] Harden production settings:
+  - no invalid TLS in production
+  - secure cookies in production
+  - CSP/HSTS/Permissions-Policy headers
 
 ---
 
@@ -115,7 +103,7 @@ maintainability, and then scale.
 - [x] Move business rules into services:
   - latest-attempt accuracy
   - ownership checks
-  - playlist resume-target selection based on `completed`, `watch_percentage`, `watch_time`, and `last_watched_at`
+  - playlist resume-target selection
   - explicit watched/unwatched semantics instead of deriving all completion state from percentage alone
   - playlist delete cascade rules for videos, progress, and notes
   - Drive token refresh and sync
@@ -128,8 +116,8 @@ maintainability, and then scale.
   - playlist cleanup and video-note cascade deletion
 - [x] Remove duplicated helpers and models:
   - use one canonical `schemas`, `constants`, `time`, `id`, and response layer
-  - replace route-local playlist progress schemas with canonical validated models (done in app/)
-  - delete or migrate stale `backend/utils/*`, route-local schemas, and unused constants
+  - replace route-local schemas with canonical validated models
+  - delete or migrate stale backend helpers and unused constants
 
 ---
 
@@ -138,7 +126,7 @@ maintainability, and then scale.
 **Goal:** move from page-heavy orchestration to feature-oriented frontend architecture.
 
 - [x] Restructure frontend partially:
-  - `src/api/` (client.js, queryKeys.js, endpoints/)
+  - `src/api/` (typed client, query keys, endpoint modules)
   - `src/features/auth/` (hooks/useAuth.js)
   - `src/features/subjects/` (hooks/useSubjects.js)
 - [x] Restructure remaining frontend data access into feature hooks:
@@ -153,7 +141,7 @@ maintainability, and then scale.
   - playlist queue window and centering
   - notes dirty-state and autosave behavior
 - [x] Centralize route paths and API paths so components never hardcode `/admin/*`, ports, or OAuth URLs
-- [x] Adopt React Query infrastructure: QueryClientProvider, api/client.js, queryKeys.js, endpoint modules
+- [x] Adopt React Query infrastructure: QueryClientProvider, typed API client, query keys, endpoint modules
 - [ ] Separate playlist concerns inside the frontend:
   - player lifecycle and progress sync
   - resume behavior
@@ -200,6 +188,10 @@ maintainability, and then scale.
   - backend lint/format config
   - frontend lint cleanup
   - CI for backend tests, frontend build, and lint checks
+- [x] Split backend dependency files:
+  - runtime dependencies in `backend/requirements.txt`
+  - dev/test tools in `backend/requirements-dev.txt`
+  - verified with a temporary clean venv
 - [x] Add architecture guardrails:
   - frontend raw API calls stay in endpoint modules
   - frontend endpoint modules are consumed through feature hooks
@@ -213,7 +205,7 @@ maintainability, and then scale.
 **Goal:** make OCR durable, isolated, and operationally safe.
 
 - [ ] Replace FastAPI `BackgroundTasks` with a durable queue (`Redis` + `ARQ`/`RQ`)
-- [ ] Make OCR jobs tenant-scoped end to end
+- [x] Make OCR jobs tenant-scoped end to end
 - [ ] Implement OCR image extraction:
   - store raw OCR images with `user_id`, `job_id`, page, mime type, and image ID
   - serve through `/api/data/ocr-images/{image_id}` with ownership checks
@@ -258,15 +250,15 @@ maintainability, and then scale.
 
 **Goal:** make the product production-ready around accounts and deployment.
 
-- [ ] Decide auth provider before email/password implementation:
-  - recommended default: Supabase Auth or Auth0
-- [ ] Add email/password flows only after provider selection:
+- [x] Decide auth provider before email/password implementation:
+  - selected: Supabase Auth, with MongoDB remaining the application database
+- [x] Add email/password flows after provider selection:
   - signup
   - login
   - forgot/reset password
-  - email verification
-  - change password
-- [ ] Keep Google login as a first-class auth option
+  - email verification is controlled in Supabase project settings
+  - change password remains future account-settings work
+- [x] Keep Google login as a first-class auth option
 - [ ] Expand account settings:
   - Drive connection
   - YouTube connection

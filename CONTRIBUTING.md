@@ -18,6 +18,18 @@ Backend:
 
 ```powershell
 cd backend
+../venv/Scripts/python.exe -m pip install -r requirements.txt
+```
+
+Install dev/test tools only when needed:
+
+```powershell
+cd backend
+../venv/Scripts/python.exe -m pip install -r requirements-dev.txt
+```
+
+```powershell
+cd backend
 & ../venv/Scripts/python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8001
 ```
 
@@ -68,7 +80,7 @@ Backend:
 
 ```powershell
 cd backend
-pytest -v
+../venv/Scripts/python.exe -m pytest -v
 ```
 
 When changing playlists, include regression coverage for:
