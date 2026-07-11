@@ -1,74 +1,55 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { api } from "@/lib/api";
 import QuestionViewer from "@/components/QuestionViewer";
 import QuestionForm from "@/components/QuestionForm";
 import FilterPills from "@/components/common/FilterPills";
+import AppSelect from "@/components/common/AppSelect";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Plus, FileQuestion } from "lucide-react";
 import Layout from "@/components/Layout";
 import { toast } from "sonner";
+import { useQuestions, useQuestionNotes, useSaveQuestionNotes } from "@/features/practice/hooks/usePractice";
+import { useSubjects, useTopics } from "@/features/subjects/hooks/useSubjects";
 
 export default function QuestionBank() {
-  const [subjects, setSubjects] = useState([]);
-  const [items, setItems] = useState([]);
-  const [total, setTotal] = useState(0);
   const [filter, setFilter] = useState({
     subject_id: "", topic_id: "", question_type: "",
     attempted: "", result: "", flag: "",
   });
-  const [topics, setTopics] = useState([]);
   const [openAdd, setOpenAdd] = useState(false);
   const [editing, setEditing] = useState(null); // question object or null
 
   const [activeIndex, setActiveIndex] = useState(0);
   const [notes, setNotes] = useState("");
-  const [savingNote, setSavingNote] = useState(false);
   const [sessionCorrect, setSessionCorrect] = useState(0);
   const [sessionTotal, setSessionTotal] = useState(0);
 
-  useEffect(() => { api.get("/subjects").then(r => setSubjects(r.data?.data || [])); }, []);
-  useEffect(() => {
-    if (!filter.subject_id) { setTopics([]); return; }
-    api.get(`/subjects/${filter.subject_id}/topics`).then(r => setTopics(r.data?.data || []));
-  }, [filter.subject_id]);
-
-  const load = () => {
-    const params = {};
-    Object.entries(filter).forEach(([k, v]) => { if (v) params[k] = v; });
-    api.get("/questions", { params }).then(r => {
-      setItems(r.data?.data?.items || []);
-      setTotal(r.data?.data?.total || 0);
-    });
-  };
+  const { data: subjects = [] } = useSubjects();
+  const { data: topics = [] } = useTopics(filter.subject_id);
+  const { data: questionData, refetch: refetchQuestions } = useQuestions(filter);
+  const items = questionData?.items || [];
+  const total = questionData?.total || 0;
 
   useEffect(() => {
     setActiveIndex(0);
-    load();
-  }, [filter]); // eslint-disable-line
+  }, [filter]);
 
   const activeQ = items[activeIndex];
+  const { data: noteData } = useQuestionNotes(activeQ?.question_id);
+  const saveQuestionNotes = useSaveQuestionNotes(activeQ?.question_id);
 
   useEffect(() => {
-    if (!activeQ) {
-      setNotes("");
-      return;
-    }
-    api.get(`/questions/${activeQ.question_id}/notes`)
-      .then(r => setNotes(r.data?.data?.note_content || ""))
-      .catch(() => setNotes(""));
-  }, [activeQ?.question_id]);
+    setNotes(noteData?.note_content || "");
+  }, [noteData?.note_content, activeQ?.question_id]);
 
   const saveNotes = async () => {
     if (!activeQ) return;
-    setSavingNote(true);
     try {
-      await api.post(`/questions/${activeQ.question_id}/notes`, { note_content: notes });
+      await saveQuestionNotes.mutateAsync(notes);
       toast.success("Notes saved");
     } catch {
       toast.error("Failed to save notes");
     }
-    setSavingNote(false);
   };
 
   const handleAttempted = (attemptResult) => {
@@ -76,7 +57,7 @@ export default function QuestionBank() {
     if (attemptResult?.attempt?.is_correct) {
       setSessionCorrect(prev => prev + 1);
     }
-    load();
+    refetchQuestions();
   };
 
   const showResultFilter = filter.attempted === "true";
@@ -91,7 +72,7 @@ export default function QuestionBank() {
   const onSaved = (savedDoc) => {
     setOpenAdd(false);
     setEditing(null);
-    load();
+    refetchQuestions();
   };
 
   const flagsByQid = useMemo(() => {
@@ -143,21 +124,36 @@ export default function QuestionBank() {
 
         <div className="space-y-2">
           <div className="flex flex-wrap gap-2">
-            <select value={filter.subject_id} onChange={e => setFilter({ ...filter, subject_id: e.target.value, topic_id: "" })}
-              className="h-9 pl-3 pr-10 text-sm bg-transparent border border-border rounded-md appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2020%2020%22%3E%3Cpath%20stroke%3D%22%236b7280%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%221.5%22%20d%3D%22m6%208%204%204%204-4%22%2F%3E%3C%2Fsvg%3E')] bg-[position:right_12px_center] bg-[size:16px] bg-no-repeat" data-testid="qb-subject-filter">
-              <option value="">All subjects</option>
-              {subjects.map(s => <option key={s.subject_id} value={s.subject_id}>{s.name}</option>)}
-            </select>
-            <select value={filter.topic_id} onChange={e => setFilter({ ...filter, topic_id: e.target.value })}
-              className="h-9 pl-3 pr-10 text-sm bg-transparent border border-border rounded-md appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2020%2020%22%3E%3Cpath%20stroke%3D%22%236b7280%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%221.5%22%20d%3D%22m6%208%204%204%204-4%22%2F%3E%3C%2Fsvg%3E')] bg-[position:right_12px_center] bg-[size:16px] bg-no-repeat">
-              <option value="">All topics</option>
-              {topics.map(t => <option key={t.topic_id} value={t.topic_id}>{t.name}</option>)}
-            </select>
-            <select value={filter.question_type} onChange={e => setFilter({ ...filter, question_type: e.target.value })}
-              className="h-9 pl-3 pr-10 text-sm bg-transparent border border-border rounded-md appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2020%2020%22%3E%3Cpath%20stroke%3D%22%236b7280%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%221.5%22%20d%3D%22m6%208%204%204%204-4%22%2F%3E%3C%2Fsvg%3E')] bg-[position:right_12px_center] bg-[size:16px] bg-no-repeat">
-              <option value="">All types</option>
-              <option>MCQ</option><option>MSQ</option><option>NAT</option>
-            </select>
+            <AppSelect
+              value={filter.subject_id}
+              onChange={(value) => setFilter({ ...filter, subject_id: value, topic_id: "" })}
+              className="min-w-[190px]"
+              testId="qb-subject-filter"
+              options={[
+                { value: "", label: "All subjects" },
+                ...subjects.map((s) => ({ value: s.subject_id, label: s.name })),
+              ]}
+            />
+            <AppSelect
+              value={filter.topic_id}
+              onChange={(value) => setFilter({ ...filter, topic_id: value })}
+              className="min-w-[160px]"
+              options={[
+                { value: "", label: "All topics" },
+                ...topics.map((t) => ({ value: t.topic_id, label: t.name })),
+              ]}
+            />
+            <AppSelect
+              value={filter.question_type}
+              onChange={(value) => setFilter({ ...filter, question_type: value })}
+              className="min-w-[120px]"
+              options={[
+                { value: "", label: "All types" },
+                { value: "MCQ", label: "MCQ" },
+                { value: "MSQ", label: "MSQ" },
+                { value: "NAT", label: "NAT" },
+              ]}
+            />
           </div>
           <div className="flex flex-wrap gap-2">
             <FilterPills
@@ -237,11 +233,11 @@ export default function QuestionBank() {
                     hideNotes={true}
                     onEdit={(it) => setEditing(it)}
                     onDeleted={() => {
-                      load();
+                      refetchQuestions();
                       setActiveIndex(0);
                     }}
                     onAttempted={handleAttempted}
-                    onFlagsChanged={load}
+                    onFlagsChanged={refetchQuestions}
                   />
                 )}
               </div>
@@ -256,7 +252,7 @@ export default function QuestionBank() {
                       Personal Notes
                     </h3>
                     <span className="text-[10px] font-mono text-muted-foreground">
-                      {savingNote ? "Saving..." : "Auto-saved"}
+                      {saveQuestionNotes.isPending ? "Saving..." : "Auto-saved"}
                     </span>
                   </div>
                   <textarea

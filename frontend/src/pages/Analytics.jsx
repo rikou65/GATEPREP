@@ -1,5 +1,4 @@
-import React, { useEffect, useState, useMemo } from "react";
-import { api } from "@/lib/api";
+import React, { useState, useMemo } from "react";
 import { Link } from "react-router-dom";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
@@ -11,6 +10,7 @@ import {
   ArrowUpRight, ChevronDown, ChevronUp, BarChart3
 } from "lucide-react";
 import Layout from "@/components/Layout";
+import { useDashboard, useSubjectAnalyticsLoader } from "@/features/dashboard/hooks/useDashboard";
 
 /* ─── colour palette ─── */
 const EMERALD  = "#10B981";
@@ -217,13 +217,10 @@ const MiniStat = ({ label, value, sub, tone }) => (
    MAIN ANALYTICS COMPONENT
    ────────────────────────────────────────── */
 export default function Analytics() {
-  const [data, setData] = useState(null);
   const [topicDataCache, setTopicDataCache] = useState({});
   const [expandedSubjects, setExpandedSubjects] = useState(new Set());
-
-  useEffect(() => {
-    api.get("/dashboard").then(r => setData(r.data?.data));
-  }, []);
+  const { data } = useDashboard();
+  const loadSubjectAnalytics = useSubjectAnalyticsLoader();
 
   const toggleSubject = async (sid) => {
     setExpandedSubjects(prev => {
@@ -234,8 +231,8 @@ export default function Analytics() {
     // Lazy-load topic breakdown
     if (!topicDataCache[sid]) {
       try {
-        const r = await api.get(`/analytics/subject/${sid}`);
-        setTopicDataCache(prev => ({ ...prev, [sid]: r.data?.data || [] }));
+        const data = await loadSubjectAnalytics(sid);
+        setTopicDataCache(prev => ({ ...prev, [sid]: data || [] }));
       } catch { /* silent */ }
     }
   };

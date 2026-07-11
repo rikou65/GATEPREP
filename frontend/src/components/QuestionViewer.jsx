@@ -1,52 +1,71 @@
 import React, { useEffect, useState } from "react";
-import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import AppSelect from "@/components/common/AppSelect";
 import {
   CheckCircle2, XCircle, ChevronDown, ChevronUp, Bookmark, BookmarkCheck,
   Star, Clock, Pencil, Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatMathText, renderContentWithTables } from "@/lib/mathFormat";
+import {
+  useCreateMistake,
+  useDeletePyq,
+  useDeleteQuestion,
+  usePyqAttempts,
+  useQuestionAttempts,
+  useQuestionNotes,
+  useSaveQuestionNotes,
+  useSubmitPyqAttempt,
+  useSubmitQuestionAttempt,
+  useTogglePyqFlag,
+  useToggleQuestionFlag,
+} from "@/features/practice/hooks/usePractice";
 
 export default function QuestionViewer({ item, type = "question", onAttempted, onEdit, onDeleted, onFlagsChanged, hideNotes = false }) {
   const id = type === "pyq" ? item.pyq_id : item.question_id;
-  const baseUrl = type === "pyq" ? `/pyqs/${id}` : `/questions/${id}`;
   const [selected, setSelected] = useState(null);
   const [natValue, setNatValue] = useState("");
   const [submitted, setSubmitted] = useState(false);
   const [result, setResult] = useState(null);
   const [showSolution, setShowSolution] = useState(false);
   const [startedAt] = useState(Date.now());
-  const [attempts, setAttempts] = useState([]);
   const [notes, setNotes] = useState("");
-  const [savingNote, setSavingNote] = useState(false);
   const [mistakeType, setMistakeType] = useState("");
   const [flags, setFlags] = useState(item.flags || []);
   const [busyFlag, setBusyFlag] = useState(null);
 
+  const { data: questionAttempts = [] } = useQuestionAttempts(type === "question" ? id : undefined);
+  const { data: pyqAttempts = [] } = usePyqAttempts(type === "pyq" ? id : undefined);
+  const attempts = type === "pyq" ? pyqAttempts : questionAttempts;
+  const { data: noteData } = useQuestionNotes(type === "question" ? id : undefined);
+  const saveQuestionNotes = useSaveQuestionNotes(type === "question" ? id : undefined);
+  const submitQuestionAttempt = useSubmitQuestionAttempt(type === "question" ? id : undefined);
+  const submitPyqAttempt = useSubmitPyqAttempt(type === "pyq" ? id : undefined);
+  const toggleQuestionFlag = useToggleQuestionFlag(type === "question" ? id : undefined);
+  const togglePyqFlag = useTogglePyqFlag(type === "pyq" ? id : undefined);
+  const createMistake = useCreateMistake();
+  const deleteQuestion = useDeleteQuestion();
+  const deletePyq = useDeletePyq();
+
   useEffect(() => {
-    api.get(`${baseUrl}/attempts`).then(r => setAttempts(r.data?.data || []));
     if (type === "question") {
-      api.get(`${baseUrl}/notes`).then(r => setNotes(r.data?.data?.note_content || ""));
+      setNotes(noteData?.note_content || "");
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+  }, [noteData?.note_content, type]);
 
   useEffect(() => { setFlags(item.flags || []); }, [item.flags]);
 
   const saveNotes = async () => {
     if (type !== "question") return;
-    setSavingNote(true);
     try {
-      await api.post(`${baseUrl}/notes`, { note_content: notes });
+      await saveQuestionNotes.mutateAsync(notes);
       toast.success("Notes saved");
     } catch { toast.error("Failed to save"); }
-    setSavingNote(false);
   };
 
   const submit = async () => {
@@ -54,20 +73,21 @@ export default function QuestionViewer({ item, type = "question", onAttempted, o
     if (item.question_type === "NAT") payload = natValue;
     const time_taken = Math.round((Date.now() - startedAt) / 1000);
     try {
-      const r = await api.post(`${baseUrl}/attempt`, { selected_answer: payload, time_taken });
-      setResult(r.data?.data);
+      const attemptPayload = { selected_answer: payload, time_taken };
+      const resultData = type === "pyq"
+        ? await submitPyqAttempt.mutateAsync(attemptPayload)
+        : await submitQuestionAttempt.mutateAsync(attemptPayload);
+      setResult(resultData);
       setSubmitted(true);
       setShowSolution(true);
-      const fresh = await api.get(`${baseUrl}/attempts`);
-      setAttempts(fresh.data?.data || []);
-      onAttempted && onAttempted(r.data?.data);
+      onAttempted && onAttempted(resultData);
     } catch { toast.error("Submit failed"); }
   };
 
   const logMistake = async () => {
     if (!mistakeType || type !== "question") return;
     try {
-      await api.post("/mistakes", { question_id: id, mistake_type: mistakeType, note: "" });
+      await createMistake.mutateAsync({ question_id: id, mistake_type: mistakeType, note: "" });
       toast.success("Logged to Mistake Lab");
       setMistakeType("");
     } catch { toast.error("Failed"); }
@@ -77,13 +97,10 @@ export default function QuestionViewer({ item, type = "question", onAttempted, o
     setBusyFlag(flagType);
     try {
       const hasFlag = flags.includes(flagType);
-      let r;
-      if (hasFlag) {
-        r = await api.delete(`${baseUrl}/flag/${flagType}`);
-      } else {
-        r = await api.post(`${baseUrl}/flag`, { flag_type: flagType });
-      }
-      const newFlags = r.data?.data?.flags || [];
+      const resultData = type === "pyq"
+        ? await togglePyqFlag.mutateAsync({ flagType, enabled: !hasFlag })
+        : await toggleQuestionFlag.mutateAsync({ flagType, enabled: !hasFlag });
+      const newFlags = resultData?.flags || [];
       setFlags(newFlags);
       onFlagsChanged && onFlagsChanged(id, newFlags);
       toast.success(hasFlag ? `Unmarked ${flagType}` : `Marked as ${flagType === "review" ? "review" : "important"}`);
@@ -96,7 +113,11 @@ export default function QuestionViewer({ item, type = "question", onAttempted, o
   const handleDelete = async () => {
     if (!window.confirm(`Delete this ${type === "pyq" ? "PYQ" : "question"}? This also removes attempts, notes and flags.`)) return;
     try {
-      await api.delete(baseUrl);
+      if (type === "pyq") {
+        await deletePyq.mutateAsync(id);
+      } else {
+        await deleteQuestion.mutateAsync(id);
+      }
       toast.success("Deleted");
       onDeleted && onDeleted(id);
     } catch (e) {
@@ -282,18 +303,19 @@ export default function QuestionViewer({ item, type = "question", onAttempted, o
         </Button>
         {submitted && !isCorrect && type === "question" && (
           <div className="flex items-center gap-2">
-            <select
+            <AppSelect
               value={mistakeType}
-              onChange={(e) => setMistakeType(e.target.value)}
-              className="h-9 px-2 text-xs bg-transparent border border-border rounded-md"
-              data-testid="mistake-type-select"
-            >
-              <option value="">Log mistake type…</option>
-              <option>Conceptual Gap</option>
-              <option>Calculation Error</option>
-              <option>Question Misread</option>
-              <option>Silly Mistake</option>
-            </select>
+              onChange={setMistakeType}
+              className="h-9 min-w-[180px] text-xs"
+              testId="mistake-type-select"
+              options={[
+                { value: "", label: "Log mistake type..." },
+                { value: "Conceptual Gap", label: "Conceptual Gap" },
+                { value: "Calculation Error", label: "Calculation Error" },
+                { value: "Question Misread", label: "Question Misread" },
+                { value: "Silly Mistake", label: "Silly Mistake" },
+              ]}
+            />
             <Button size="sm" variant="outline" onClick={logMistake} data-testid="log-mistake-btn">
               <Bookmark className="w-3.5 h-3.5 mr-1" /> Log
             </Button>
@@ -323,7 +345,7 @@ export default function QuestionViewer({ item, type = "question", onAttempted, o
             data-testid="notes-textarea"
           />
           <div className="text-[10px] text-muted-foreground mono">
-            {savingNote ? "Saving…" : "Auto-saves on blur"}
+            {saveQuestionNotes.isPending ? "Saving…" : "Auto-saves on blur"}
           </div>
         </div>
       )}

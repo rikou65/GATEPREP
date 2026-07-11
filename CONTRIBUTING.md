@@ -9,7 +9,8 @@ architecture and active execution order, read `ARCHITECTURE.md` and
 1. [README.md](./README.md)
 2. [ARCHITECTURE.md](./ARCHITECTURE.md)
 3. [IMPLEMENTATION_ROADMAP.md](./IMPLEMENTATION_ROADMAP.md)
-4. [OCR_PIPELINE.md](./OCR_PIPELINE.md) if touching OCR/staging
+4. [AUTH_STRATEGY.md](./AUTH_STRATEGY.md) if touching auth
+5. [OCR_PIPELINE.md](./OCR_PIPELINE.md) if touching OCR/staging
 
 ## Local Setup
 
@@ -17,14 +18,14 @@ Backend:
 
 ```powershell
 cd backend
-& ../venv/Scripts/python.exe -m uvicorn server:app --host 127.0.0.1 --port 8001
+& ../venv/Scripts/python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8001
 ```
 
 Frontend:
 
 ```powershell
 cd frontend
-node_modules/.bin/vite.cmd --host 127.0.0.1 --port 3000
+node_modules/.bin/vite.cmd --host 127.0.0.1 --port 3000 --strictPort
 ```
 
 ## Core Rules
@@ -36,10 +37,13 @@ node_modules/.bin/vite.cmd --host 127.0.0.1 --port 3000
 - Do not reintroduce legacy `/api/admin/*` staging routes
 - Keep Question Bank and PYQs separate
 - Keep route handlers thin when feasible
+- Endpoints → services → repositories → MongoDB (no `db.xxx` outside repositories; bootstrap seed/migration code is the only exception)
+- Auth provider details stay behind auth services/integrations (routes never know auth type)
 
 ## Frontend Conventions
 
-- Use the shared API client from `frontend/src/lib/api.js`
+- Raw Axios calls belong only in `frontend/src/api/endpoints/*`
+- Pages and components should consume endpoint wrappers or React Query feature hooks
 - Prefer existing UI primitives before adding dependencies
 - Keep server state separate from UI-only state
 - Preserve in-context study flows and avoid noisy UX

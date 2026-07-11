@@ -1,10 +1,18 @@
-import React from "react";
-import { Navigate } from "react-router-dom";
+import React, { useEffect } from "react";
+import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
-import Layout from "./Layout";
+import { rememberProtectedPath } from "@/lib/routeMemory";
 
 export default function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
+  const location = useLocation();
+
+  useEffect(() => {
+    if (!loading && user) {
+      rememberProtectedPath(`${location.pathname}${location.search}`);
+    }
+  }, [loading, user, location.pathname, location.search]);
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background text-foreground dark">
@@ -12,6 +20,6 @@ export default function ProtectedRoute({ children }) {
       </div>
     );
   }
-  if (!user) return <Navigate to="/" replace />;
+  if (!user) return <Navigate to="/" replace state={{ from: location }} />;
   return children;
 }

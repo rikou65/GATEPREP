@@ -1,9 +1,15 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { api } from "@/lib/api";
+import React, { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { useSubjects } from "@/features/subjects/hooks/useSubjects";
+import {
+  useDeletePlaylist,
+  useImportPlaylist,
+  usePlaylists,
+} from "@/features/playlists/hooks/usePlaylists";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
+import AppSelect from "@/components/common/AppSelect";
 import { ListVideo, Plus, Play, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import Layout from "@/components/Layout";
@@ -18,35 +24,36 @@ function formatDuration(seconds) {
 }
 
 export default function Playlists() {
-  const [playlists, setPlaylists] = useState([]);
-  const [subjects, setSubjects] = useState([]);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ youtube_url: "", subject_id: "" });
   const [loading, setLoading] = useState(false);
 
-  const load = () => api.get("/playlists").then(r => setPlaylists(r.data?.data || []));
-  useEffect(() => { load(); api.get("/subjects").then(r => setSubjects(r.data?.data || [])); }, []);
+  const { data: playlists = [] } = usePlaylists();
+  const { data: subjects = [] } = useSubjects();
+  const importPlaylist = useImportPlaylist();
+  const deletePlaylist = useDeletePlaylist();
 
   const submit = async () => {
     if (!form.youtube_url || !form.subject_id) { toast.error("Fill all fields"); return; }
     setLoading(true);
     try {
-      const r = await api.post("/playlists/import", form);
-      if (r.data?.data?.already_exists) {
+      const result = await importPlaylist.mutateAsync(form);
+      if (result?.already_exists) {
         toast.info("Playlist already imported");
       } else {
         toast.success("Playlist imported");
       }
-      setOpen(false); setForm({ youtube_url: "", subject_id: "" }); load();
+      setOpen(false); setForm({ youtube_url: "", subject_id: "" });
     } catch (e) {
-      toast.error(e?.response?.data?.error?.message || "Import failed");
+      const backendError = e?.response?.data?.error;
+      const message = backendError?.message || "Import failed";
+      toast.error(backendError?.code ? `${message} (${backendError.code})` : message);
     }
     setLoading(false);
   };
 
   const remove = async (id) => {
-    await api.delete(`/playlists/${id}`);
-    load();
+    await deletePlaylist.mutateAsync(id);
   };
 
   // Group playlists by subject in the canonical subject order
@@ -83,15 +90,16 @@ export default function Playlists() {
                   onChange={(e) => setForm(f => ({ ...f, youtube_url: e.target.value }))}
                   data-testid="playlist-url-input"
                 />
-                <select
+                <AppSelect
                   value={form.subject_id}
-                  onChange={(e) => setForm(f => ({ ...f, subject_id: e.target.value }))}
-                  className="w-full h-10 px-3 text-sm bg-transparent border border-border rounded-md"
-                  data-testid="playlist-subject-select"
-                >
-                  <option value="">Select subject</option>
-                  {subjects.map(s => <option key={s.subject_id} value={s.subject_id}>{s.name}</option>)}
-                </select>
+                  onChange={(value) => setForm(f => ({ ...f, subject_id: value }))}
+                  className="w-full"
+                  testId="playlist-subject-select"
+                  options={[
+                    { value: "", label: "Select subject" },
+                    ...subjects.map((s) => ({ value: s.subject_id, label: s.name })),
+                  ]}
+                />
               </div>
               <DialogFooter>
                 <Button onClick={submit} disabled={loading} data-testid="confirm-import-btn">

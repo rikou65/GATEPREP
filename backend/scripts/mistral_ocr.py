@@ -13,11 +13,17 @@ import pypdfium2 as pdfium
 from mistralai.client import Mistral
 from pydantic import BaseModel, Field
 
-# Ensure we can import from parent directory
 import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from shared import db, new_id, now_utc, iso, logger
+from app.core.config import Settings
+from app.core.db import create_db_client
+from app.core.ids import new_id
+from app.core.logging import logger
+from app.core.time import iso, now_utc
+
+settings = Settings()
+client, db = create_db_client(settings)
 
 # Read API key directly from env to avoid 'settings' scope issues
 MISTRAL_API_KEY = os.environ.get("MISTRAL_API_KEY", "")

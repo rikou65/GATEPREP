@@ -1,7 +1,16 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
+import { queryClient } from "@/api/client";
+import { queryKeys } from "@/api/queryKeys";
+import {
+  useConnectDrive,
+  useConnectYouTube,
+  useDisconnectDrive,
+  useDisconnectYouTube,
+  useDriveIntegrationStatus,
+  useYouTubeIntegrationStatus,
+} from "@/features/settings/hooks/useIntegrations";
 import { useAuth } from "@/context/AuthContext";
-import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { LogOut, HardDrive, Youtube, CheckCircle2, Plug, Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -12,29 +21,14 @@ const processedYoutubeParams = new Set();
 
 export default function Settings() {
   const { user, logout } = useAuth();
-  const [drive, setDrive] = useState(null);
-  const [driveLoading, setDriveLoading] = useState(true);
-  const [youtube, setYoutube] = useState(null);
-  const [youtubeLoading, setYoutubeLoading] = useState(true);
   const [search, setSearch] = useSearchParams();
 
-  const loadDrive = () => {
-    setDriveLoading(true);
-    return api.get("/drive/status").then(r => {
-      setDrive(r.data?.data);
-    }).finally(() => {
-      setDriveLoading(false);
-    });
-  };
-  const loadYoutube = () => {
-    setYoutubeLoading(true);
-    return api.get("/youtube/status").then(r => {
-      setYoutube(r.data?.data);
-    }).finally(() => {
-      setYoutubeLoading(false);
-    });
-  };
-  useEffect(() => { loadDrive(); loadYoutube(); }, []);
+  const { data: drive, isLoading: driveLoading } = useDriveIntegrationStatus();
+  const { data: youtube, isLoading: youtubeLoading } = useYouTubeIntegrationStatus();
+  const connectDriveMutation = useConnectDrive();
+  const connectYouTubeMutation = useConnectYouTube();
+  const disconnectDriveMutation = useDisconnectDrive();
+  const disconnectYouTubeMutation = useDisconnectYouTube();
 
   useEffect(() => {
     const status = search.get("drive");
@@ -45,7 +39,7 @@ export default function Settings() {
     Promise.resolve().then(() => {
       if (status === "connected") {
         toast.success("Google Drive connected — your existing GATEPREP files will reappear on the Resources page");
-        loadDrive();
+        queryClient.invalidateQueries({ queryKey: queryKeys.drive.status });
       } else if (status === "error") {
         toast.error("Google Drive connection failed");
       }
@@ -63,7 +57,7 @@ export default function Settings() {
     Promise.resolve().then(() => {
       if (status === "connected") {
         toast.success("YouTube connected — you can now import your playlists");
-        loadYoutube();
+        queryClient.invalidateQueries({ queryKey: queryKeys.youtube.status });
       } else if (status === "error") {
         toast.error("YouTube connection failed");
       }
@@ -74,8 +68,8 @@ export default function Settings() {
 
   const connectDrive = async () => {
     try {
-      const r = await api.get("/drive/connect");
-      window.location.href = r.data?.data?.authorization_url;
+      const result = await connectDriveMutation.mutateAsync();
+      window.location.href = result.authorization_url;
     } catch {
       toast.error("Failed to start Drive connection");
     }
@@ -84,16 +78,15 @@ export default function Settings() {
   const disconnectDrive = async () => {
     if (!window.confirm("Disconnect Google Drive? Files stay in your Drive; new uploads will be disabled.")) return;
     try {
-      await api.post("/drive/disconnect");
+      await disconnectDriveMutation.mutateAsync();
       toast.success("Disconnected");
-      loadDrive();
     } catch { toast.error("Disconnect failed"); }
   };
 
   const connectYoutube = async () => {
     try {
-      const r = await api.get("/youtube/auth");
-      window.location.href = r.data?.data?.authorization_url;
+      const result = await connectYouTubeMutation.mutateAsync();
+      window.location.href = result.authorization_url;
     } catch {
       toast.error("Failed to start YouTube connection");
     }
@@ -102,9 +95,8 @@ export default function Settings() {
   const disconnectYoutube = async () => {
     if (!window.confirm("Disconnect YouTube? Playlist imports will stop working.")) return;
     try {
-      await api.post("/youtube/disconnect");
+      await disconnectYouTubeMutation.mutateAsync();
       toast.success("YouTube disconnected");
-      loadYoutube();
     } catch { toast.error("Disconnect failed"); }
   };
 

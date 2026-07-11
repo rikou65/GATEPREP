@@ -32,13 +32,13 @@ SECONDARY_TOKEN: str | None = os.environ.get("SECONDARY_TOKEN")
 @pytest.fixture(scope="session")
 def primary_headers() -> Dict[str, str]:
     assert PRIMARY_TOKEN, "PRIMARY_TOKEN env required"
-    return {"Authorization": f"Bearer {PRIMARY_TOKEN}", "Content-Type": "application/json"}
+    return {"Cookie": f"session_token={PRIMARY_TOKEN}", "Content-Type": "application/json"}
 
 
 @pytest.fixture(scope="session")
 def secondary_headers() -> Dict[str, str]:
     assert SECONDARY_TOKEN, "SECONDARY_TOKEN env required"
-    return {"Authorization": f"Bearer {SECONDARY_TOKEN}", "Content-Type": "application/json"}
+    return {"Cookie": f"session_token={SECONDARY_TOKEN}", "Content-Type": "application/json"}
 
 
 @pytest.fixture(scope="session")

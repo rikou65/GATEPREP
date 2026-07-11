@@ -1,15 +1,24 @@
 import React, { useEffect, useRef, useState, useMemo } from "react";
-import { createPortal } from "react-dom";
-import { api } from "@/lib/api";
+import { useSubjects } from "@/features/subjects/hooks/useSubjects";
+import {
+  useCreateResourceLink,
+  useDeleteResource,
+  useDriveStatus,
+  useRefreshDrive,
+  useResourceViewerActions,
+  useResources,
+  useSyncDrive,
+  useUploadResource,
+} from "@/features/resources/hooks/useResources";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { FolderArchive, Plus, ExternalLink, Trash2, Upload, FileText, HardDrive, X, Maximize2, RefreshCw } from "lucide-react";
+import { FolderArchive, Plus, ExternalLink, Trash2, Upload, FileText, HardDrive, Maximize2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { Link } from "react-router-dom";
 import PdfCanvasViewer from "@/components/PdfCanvasViewer";
 import Layout from "@/components/Layout";
+import AppSelect from "@/components/common/AppSelect";
 
 const TYPES = ["Books", "Notes", "Question Banks", "PYQ Collections", "Formula Sheets", "Reference Material"];
 const driveSyncKey = (userId) => (userId ? `driveSyncNeeded:${userId}` : null);
@@ -22,23 +31,29 @@ function formatSize(bytes) {
 }
 
 export default function Resources() {
-  const [items, setItems] = useState([]);
-  const [subjects, setSubjects] = useState([]);
+  const { data: subjects = [] } = useSubjects();
   const [filter, setFilter] = useState({ subject_id: "", resource_type: "" });
+  const { data: items = [] } = useResources(filter);
+  const { data: driveStatus } = useDriveStatus();
+  const syncDrive = useSyncDrive();
+  const refreshDrive = useRefreshDrive();
+  const createResourceLink = useCreateResourceLink();
+  const uploadResource = useUploadResource();
+  const deleteResource = useDeleteResource();
+  const resourceViewer = useResourceViewerActions();
   const [openLink, setOpenLink] = useState(false);
   const [openUpload, setOpenUpload] = useState(false);
-  const [driveStatus, setDriveStatus] = useState(null);
   const [linkForm, setLinkForm] = useState({ title: "", subject_id: "", resource_type: "Notes", external_url: "" });
   const [uploadForm, setUploadForm] = useState({ title: "", subject_id: "", resource_type: "Notes" });
   const [uploadFile, setUploadFile] = useState(null);
-  const [uploading, setUploading] = useState(false);
   const [viewer, setViewer] = useState(null);
   const [viewerNotes, setViewerNotes] = useState({ content: "", important_pages: [] });
   const fileRef = useRef(null);
   const blobCache = useRef(new Map()); // resource_id -> Blob (cached for this session)
-  const [syncing, setSyncing] = useState(false);
   const [lastSync, setLastSync] = useState(null);
   const closingViewerRef = useRef(false);
+  const uploading = uploadResource.isPending;
+  const syncing = syncDrive.isPending;
 
   // Group resources by subject in the canonical subject order
   const groups = useMemo(() => {
@@ -57,23 +72,19 @@ export default function Resources() {
       toast.error("Connect Google Drive first (Settings)");
       return;
     }
-    setSyncing(true);
     try {
-      const r = await api.post("/drive/sync");
-      const d = r.data?.data || {};
+      const d = await syncDrive.mutateAsync() || {};
       setLastSync(d);
       if (d.error === "no_gateprep_folder") {
         toast.info("No existing GATEPREP folder found in your Drive.");
       } else if (d.synced > 0) {
         toast.success(`Restored ${d.synced} file${d.synced === 1 ? "" : "s"} from your Drive`);
-        load();
       } else {
         toast.info("Drive is in sync — nothing new to import.");
       }
     } catch (e) {
       toast.error("Drive sync failed: " + (e?.response?.data?.error?.message || e.message));
     }
-    setSyncing(false);
   };
 
   // Revoke blob URL when viewer changes/closes to free memory
@@ -123,75 +134,65 @@ export default function Resources() {
     return () => window.removeEventListener("popstate", handlePopState);
   }, [viewer]);
 
-  const load = () => {
-    const params = {};
-    Object.entries(filter).forEach(([k, v]) => { if (v) params[k] = v; });
-    api.get("/resources", { params }).then(r => setItems(r.data?.data || []));
-  };
   useEffect(() => {
-    api.get("/subjects").then(r => setSubjects(r.data?.data || []));
-    api.get("/drive/status").then(r => {
-      const status = r.data?.data;
-      setDriveStatus(status);
-      if (status?.connected) {
-        // Refresh the Drive token silently in the background so opening PDFs is instant.
-        api.post("/drive/refresh").catch(() => {});
+    if (driveStatus?.connected) {
+      // Refresh the Drive token silently in the background so opening PDFs is instant.
+      refreshDrive.mutateAsync().catch(() => {});
 
-        // Sync only on first visit after login or explicit user action.
-        const syncKey = driveSyncKey(status.user_id);
-        if (syncKey && localStorage.getItem(syncKey) === "true") {
-          localStorage.removeItem(syncKey);
-          runSync(status);
-        }
+      // Sync only on first visit after login or explicit user action.
+      const syncKey = driveSyncKey(driveStatus.user_id);
+      if (syncKey && localStorage.getItem(syncKey) === "true") {
+        localStorage.removeItem(syncKey);
+        runSync(driveStatus);
       }
-    });
-  }, []);
-  useEffect(load, [filter]); // eslint-disable-line
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [driveStatus?.connected, driveStatus?.user_id]);
 
   const submitLink = async () => {
     if (!linkForm.title || !linkForm.subject_id) return toast.error("Fill required fields");
-    await api.post("/resources", linkForm);
+    await createResourceLink.mutateAsync(linkForm);
     setOpenLink(false);
     setLinkForm({ title: "", subject_id: "", resource_type: "Notes", external_url: "" });
-    load();
     toast.success("Resource added");
   };
 
   const submitUpload = async () => {
     if (!uploadFile || !uploadForm.subject_id) return toast.error("Pick a file and subject");
     if (!driveStatus?.connected) return toast.error("Connect Google Drive in Settings first");
-    setUploading(true);
     try {
       const fd = new FormData();
       fd.append("file", uploadFile);
       fd.append("subject_id", uploadForm.subject_id);
       fd.append("resource_type", uploadForm.resource_type);
       if (uploadForm.title) fd.append("title", uploadForm.title);
-      await api.post("/resources/upload", fd, { headers: { "Content-Type": "multipart/form-data" } });
+      await uploadResource.mutateAsync(fd);
       toast.success("Uploaded to your Drive");
       setOpenUpload(false);
       setUploadForm({ title: "", subject_id: "", resource_type: "Notes" });
       setUploadFile(null);
       if (fileRef.current) fileRef.current.value = "";
-      load();
       runSync(driveStatus);
     } catch (e) {
-      toast.error(e?.response?.data?.error?.message || "Upload failed");
+      const uploadError = e?.response?.data?.error;
+      toast.error(
+        uploadError?.message
+          ? `${uploadError.message}${uploadError.code ? ` (${uploadError.code})` : ""}`
+          : "Upload failed"
+      );
     }
-    setUploading(false);
   };
 
-  const remove = async (id) => { await api.delete(`/resources/${id}`); load(); };
+  const remove = async (id) => { await deleteResource.mutateAsync(id); };
 
   const openResource = async (r) => {
     try {
       // Fetch notes + important pages in parallel with the view url request
-      const notesPromise = api.get(`/resources/${r.resource_id}/notes`).then(
-        (resp) => resp.data?.data || { content: "", important_pages: [] },
-      ).catch(() => ({ content: "", important_pages: [] }));
+      const notesPromise = resourceViewer.notes(r.resource_id)
+        .then((data) => data || { content: "", important_pages: [] })
+        .catch(() => ({ content: "", important_pages: [] }));
 
-      const res = await api.get(`/resources/${r.resource_id}/view`);
-      const data = res.data?.data;
+      const data = await resourceViewer.view(r.resource_id);
       if (!data?.embed_url && data?.kind !== "drive") { toast.error("No preview available"); return; }
 
       // Resolve notes (don't block UI on it though — viewer can render while notes load)
@@ -213,7 +214,7 @@ export default function Resources() {
           return;
         }
         setViewer({ resource_id: r.resource_id, title: r.title, blob: null, view_url: data.view_url, isPdf: true, loading: true });
-        const blobRes = await api.get(`/resources/${r.resource_id}/stream`, { responseType: "blob" });
+        const blobRes = await resourceViewer.stream(r.resource_id);
         blobCache.current.set(r.resource_id, blobRes.data);
         const isPdf = (blobRes.data?.type || "").includes("pdf") || r.title?.toLowerCase().endsWith(".pdf");
         if (isPdf) {
@@ -244,8 +245,7 @@ export default function Resources() {
   const saveNotesContent = async (content) => {
     if (!viewer?.resource_id) return;
     try {
-      const resp = await api.post(`/resources/${viewer.resource_id}/notes`, { content });
-      const d = resp.data?.data;
+      const d = await resourceViewer.saveNotes(viewer.resource_id, { content });
       if (d) setViewerNotes({
         content: d.content || "",
         important_pages: Array.isArray(d.important_pages) ? d.important_pages : [],
@@ -264,8 +264,8 @@ export default function Resources() {
       : [...viewerNotes.important_pages, { page, label: "" }].sort((a, b) => a.page - b.page);
     setViewerNotes((v) => ({ ...v, important_pages: next }));
     try {
-      const resp = await api.post(`/resources/${viewer.resource_id}/pages/toggle`, { page });
-      const pages = resp.data?.data?.important_pages;
+      const result = await resourceViewer.togglePage(viewer.resource_id, { page });
+      const pages = result?.important_pages;
       if (Array.isArray(pages)) setViewerNotes((v) => ({ ...v, important_pages: pages }));
     } catch {
       toast.error("Couldn't update bookmark");
@@ -281,8 +281,8 @@ export default function Resources() {
       important_pages: v.important_pages.map((p) => (p.page === page ? { ...p, label } : p)),
     }));
     try {
-      const resp = await api.post(`/resources/${viewer.resource_id}/pages/label`, { page, label });
-      const pages = resp.data?.data?.important_pages;
+      const result = await resourceViewer.labelPage(viewer.resource_id, { page, label });
+      const pages = result?.important_pages;
       if (Array.isArray(pages)) setViewerNotes((v) => ({ ...v, important_pages: pages }));
     } catch {
       toast.error("Couldn't save label");
@@ -395,22 +395,22 @@ export default function Resources() {
                         value={uploadForm.title}
                         onChange={(e) => setUploadForm({ ...uploadForm, title: e.target.value })}
                       />
-                      <select
+                      <AppSelect
                         value={uploadForm.subject_id}
-                        onChange={(e) => setUploadForm({ ...uploadForm, subject_id: e.target.value })}
-                        className="w-full h-10 px-3 text-sm bg-transparent border border-border rounded-md"
-                        data-testid="upload-subject-select"
-                      >
-                        <option value="">Subject</option>
-                        {subjects.map(s => <option key={s.subject_id} value={s.subject_id}>{s.name}</option>)}
-                      </select>
-                      <select
+                        onChange={(value) => setUploadForm({ ...uploadForm, subject_id: value })}
+                        className="w-full"
+                        testId="upload-subject-select"
+                        options={[
+                          { value: "", label: "Subject" },
+                          ...subjects.map((s) => ({ value: s.subject_id, label: s.name })),
+                        ]}
+                      />
+                      <AppSelect
                         value={uploadForm.resource_type}
-                        onChange={(e) => setUploadForm({ ...uploadForm, resource_type: e.target.value })}
-                        className="w-full h-10 px-3 text-sm bg-transparent border border-border rounded-md"
-                      >
-                        {TYPES.map(t => <option key={t}>{t}</option>)}
-                      </select>
+                        onChange={(value) => setUploadForm({ ...uploadForm, resource_type: value })}
+                        className="w-full"
+                        options={TYPES.map((t) => ({ value: t, label: t }))}
+                      />
                     </div>
                   )}
                   {driveStatus?.connected && (
@@ -431,13 +431,22 @@ export default function Resources() {
                   <DialogHeader><DialogTitle>Add Resource by URL</DialogTitle></DialogHeader>
                   <div className="space-y-3">
                     <Input placeholder="Title" value={linkForm.title} onChange={e => setLinkForm({ ...linkForm, title: e.target.value })} data-testid="resource-title-input" />
-                    <select value={linkForm.subject_id} onChange={e => setLinkForm({ ...linkForm, subject_id: e.target.value })} className="w-full h-10 px-3 text-sm bg-transparent border border-border rounded-md" data-testid="resource-subject-select">
-                      <option value="">Subject</option>
-                      {subjects.map(s => <option key={s.subject_id} value={s.subject_id}>{s.name}</option>)}
-                    </select>
-                    <select value={linkForm.resource_type} onChange={e => setLinkForm({ ...linkForm, resource_type: e.target.value })} className="w-full h-10 px-3 text-sm bg-transparent border border-border rounded-md">
-                      {TYPES.map(t => <option key={t}>{t}</option>)}
-                    </select>
+                    <AppSelect
+                      value={linkForm.subject_id}
+                      onChange={(value) => setLinkForm({ ...linkForm, subject_id: value })}
+                      className="w-full"
+                      testId="resource-subject-select"
+                      options={[
+                        { value: "", label: "Subject" },
+                        ...subjects.map((s) => ({ value: s.subject_id, label: s.name })),
+                      ]}
+                    />
+                    <AppSelect
+                      value={linkForm.resource_type}
+                      onChange={(value) => setLinkForm({ ...linkForm, resource_type: value })}
+                      className="w-full"
+                      options={TYPES.map((t) => ({ value: t, label: t }))}
+                    />
                     <Input placeholder="External URL (Google Drive, Dropbox…)" value={linkForm.external_url} onChange={e => setLinkForm({ ...linkForm, external_url: e.target.value })} />
                   </div>
                   <DialogFooter><Button onClick={submitLink} data-testid="save-resource-btn">Save</Button></DialogFooter>
@@ -447,14 +456,24 @@ export default function Resources() {
           </div>
 
           <div className="flex gap-2 flex-wrap">
-            <select value={filter.subject_id} onChange={e => setFilter({ ...filter, subject_id: e.target.value })} className="h-9 pl-3 pr-10 text-sm bg-transparent border border-border rounded-md appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2020%2020%22%3E%3Cpath%20stroke%3D%22%236b7280%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%221.5%22%20d%3D%22m6%208%204%204%204-4%22%2F%3E%3C%2Fsvg%3E')] bg-[position:right_12px_center] bg-[size:16px] bg-no-repeat">
-              <option value="">All subjects</option>
-              {subjects.map(s => <option key={s.subject_id} value={s.subject_id}>{s.name}</option>)}
-            </select>
-            <select value={filter.resource_type} onChange={e => setFilter({ ...filter, resource_type: e.target.value })} className="h-9 pl-3 pr-10 text-sm bg-transparent border border-border rounded-md appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2020%2020%22%3E%3Cpath%20stroke%3D%22%236b7280%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%221.5%22%20d%3D%22m6%208%204%204%204-4%22%2F%3E%3C%2Fsvg%3E')] bg-[position:right_12px_center] bg-[size:16px] bg-no-repeat">
-              <option value="">All types</option>
-              {TYPES.map(t => <option key={t}>{t}</option>)}
-            </select>
+            <AppSelect
+              value={filter.subject_id}
+              onChange={(value) => setFilter({ ...filter, subject_id: value })}
+              className="min-w-[190px]"
+              options={[
+                { value: "", label: "All subjects" },
+                ...subjects.map((s) => ({ value: s.subject_id, label: s.name })),
+              ]}
+            />
+            <AppSelect
+              value={filter.resource_type}
+              onChange={(value) => setFilter({ ...filter, resource_type: value })}
+              className="min-w-[145px]"
+              options={[
+                { value: "", label: "All types" },
+                ...TYPES.map((t) => ({ value: t, label: t })),
+              ]}
+            />
           </div>
 
           {syncing && (
@@ -496,7 +515,15 @@ export default function Resources() {
                     </div>
                   </div>
                   <div className="border border-border rounded-lg overflow-hidden">
-                    <table className="w-full text-sm">
+                    <table className="w-full table-fixed text-sm">
+                      <colgroup>
+                        <col className="w-[34%]" />
+                        <col className="w-[13%]" />
+                        <col className="w-[15%]" />
+                        <col className="w-[15%]" />
+                        <col className="w-[17%]" />
+                        <col className="w-[6%]" />
+                      </colgroup>
                       <thead className="border-b border-border">
                         <tr className="text-left text-[10px] uppercase tracking-[0.15em] text-muted-foreground">
                           <th className="p-3 font-medium">Title</th>
@@ -510,8 +537,12 @@ export default function Resources() {
                       <tbody>
                         {subjectItems.map(r => (
                           <tr key={r.resource_id} className="border-b border-border hover:bg-muted/30 transition-colors" data-testid={`resource-${r.resource_id}`}>
-                            <td className="p-3 font-medium">{r.title}</td>
-                            <td className="p-3 text-xs mono text-muted-foreground">{r.resource_type}</td>
+                            <td className="p-3 font-medium">
+                              <div className="truncate" title={r.title}>{r.title}</div>
+                            </td>
+                            <td className="p-3 text-xs mono text-muted-foreground">
+                              <div className="truncate" title={r.resource_type}>{r.resource_type}</div>
+                            </td>
                             <td className="p-3 text-xs">
                               {r.drive_file_id ? (
                                 <span className="inline-flex items-center gap-1 text-emerald-500"><HardDrive className="w-3 h-3" /> Drive</span>
@@ -519,7 +550,7 @@ export default function Resources() {
                                 <span className="text-muted-foreground">URL</span>
                               )}
                             </td>
-                            <td className="p-3 text-xs mono text-muted-foreground">{formatSize(r.file_size)}</td>
+                            <td className="p-3 text-xs mono text-muted-foreground whitespace-nowrap">{formatSize(r.file_size)}</td>
                             <td className="p-3">
                               <button onClick={() => openResource(r)} className="text-xs inline-flex items-center gap-1 text-muted-foreground hover:text-foreground" data-testid={`open-resource-${r.resource_id}`}>
                                 Open <ExternalLink className="w-3 h-3" />

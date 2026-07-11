@@ -1,69 +1,53 @@
-import React, { useEffect, useState } from "react";
-import { api } from "@/lib/api";
+import React, { useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { CheckCircle2, AlertOctagon, Loader2, RefreshCw, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import Layout from "@/components/Layout";
 import { formatMathText, renderContentWithTables } from "@/lib/mathFormat";
+import {
+  useApproveReadyStaging,
+  useApproveStagingItem,
+  useClearStaging,
+  useDeleteImportJob,
+  useDeleteStagingItem,
+  useImportJobs,
+  useStagingItems,
+} from "@/features/staging/hooks/useStaging";
 
 
 export default function StagingQueue() {
-  const [items, setItems] = useState([]);
-  const [jobs, setJobs] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [processing, setProcessing] = useState(false);
+  const { data: items = [], isLoading: loading, refetch: refetchItems } = useStagingItems();
+  const { data: jobs = [] } = useImportJobs();
+  const approveReady = useApproveReadyStaging();
+  const approveItem = useApproveStagingItem();
+  const deleteItem = useDeleteStagingItem();
+  const deleteJob = useDeleteImportJob();
+  const clearStaging = useClearStaging();
+
+  const processing =
+    approveReady.isPending || approveItem.isPending || deleteItem.isPending || clearStaging.isPending;
+  const activeJobs = jobs.filter(j => j.status === "PROCESSING");
+  const failedJobs = jobs.filter(j => j.status === "FAILED");
 
   useEffect(() => {
-    fetchStaging();
-    fetchJobs(); // Fetch jobs immediately!
-    const interval = setInterval(fetchJobs, 5000);
-    return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const fetchStaging = async () => {
-    try {
-      const res = await api.get("/data/staging");
-      setItems(res.data?.data || []);
-    } catch {
-      // silently ignore
-    } finally {
-      setLoading(false);
+    if (activeJobs.length > 0) {
+      refetchItems();
     }
-  };
-
-  const fetchJobs = async () => {
-    try {
-      const res = await api.get("/data/import/jobs");
-      const jobsData = res.data?.data || [];
-      setJobs(jobsData);
-      
-      // If there are active processing jobs, refresh staging items automatically
-      const hasActive = jobsData.some(j => j.status === "PROCESSING");
-      if (hasActive) {
-        fetchStaging();
-      }
-    } catch (e) {}
-  };
+  }, [activeJobs.length, refetchItems]);
 
   const handleBulkApprove = async () => {
-    setProcessing(true);
     try {
-      await api.post("/data/staging/bulk-approve");
+      await approveReady.mutateAsync();
       toast.success("Successfully approved ready items");
-      fetchStaging();
     } catch (e) {
       toast.error("Bulk approval failed");
-    } finally {
-      setProcessing(false);
     }
   };
 
   const handleDiscard = async (id) => {
     try {
-      await api.delete(`/data/staging/${id}`);
-      setItems(items.filter(i => i.staging_id !== id));
+      await deleteItem.mutateAsync(id);
       toast.success("Item discarded");
     } catch (e) {
       toast.error("Failed to discard item");
@@ -72,8 +56,7 @@ export default function StagingQueue() {
 
   const handleApproveSingle = async (item) => {
     try {
-      await api.post("/data/staging/approve-specific", { staging_id: item.staging_id });
-      setItems(items.filter(i => i.staging_id !== item.staging_id));
+      await approveItem.mutateAsync(item.staging_id);
       toast.success("Item manually approved");
     } catch (e) {
       toast.error("Failed to approve item");
@@ -82,31 +65,24 @@ export default function StagingQueue() {
 
   const dismissJob = async (jobId) => {
     try {
-      await api.delete(`/data/import/jobs/${jobId}`);
+      await deleteJob.mutateAsync(jobId);
     } catch (e) {
-      // ignore — remove from UI regardless
+      // ignore
     }
-    setJobs(prev => prev.filter(j => j.job_id !== jobId));
   };
 
   const handleClearAll = async () => {
     if (!window.confirm(`This will permanently delete ALL ${items.length} staging items. Are you sure?`)) return;
-    setProcessing(true);
     try {
-      await api.delete("/data/staging");
-      setItems([]);
+      await clearStaging.mutateAsync();
       toast.success("Staging queue cleared");
     } catch (e) {
       toast.error("Failed to clear staging queue");
-    } finally {
-      setProcessing(false);
     }
   };
 
   const readyItems = items.filter(i => i.status === "READY");
   const orphanedItems = items.filter(i => i.status !== "READY");
-  const activeJobs = jobs.filter(j => j.status === "PROCESSING");
-  const failedJobs = jobs.filter(j => j.status === "FAILED");
 
   return (
     <Layout title="OCR Staging Queue">

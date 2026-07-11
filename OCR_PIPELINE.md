@@ -118,7 +118,7 @@ Important behavioral requirements:
 ## Known Active Limitations
 
 - OCR image extraction is not yet production-complete
-- staging and OCR flows are still part of the larger tenant-isolation roadmap
+- staging and OCR flows are now tenant-isolated (Phase 2 completed)
 - queue durability and production worker architecture are planned later in the roadmap
 
 ## Relationship To The Roadmap

@@ -1,25 +1,23 @@
-import React, { useState, useEffect } from "react";
-import { api } from "@/lib/api";
+import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { Loader2, UploadCloud, Link as LinkIcon, FileText } from "lucide-react";
 import Layout from "@/components/Layout";
 import { useNavigate } from "react-router-dom";
+import AppSelect from "@/components/common/AppSelect";
+import { useImportPdf } from "@/features/staging/hooks/useStaging";
+import { useSubjects } from "@/features/subjects/hooks/useSubjects";
 
 export default function ImportPDF() {
-  const [subjects, setSubjects] = useState([]);
   const [subjectId, setSubjectId] = useState("");
   const [uploadMode, setUploadMode] = useState("file"); // "file" or "url"
   const [source, setSource] = useState(""); // e.g. "GO-PDFs", "MADE Easy", etc.
   const [file, setFile] = useState(null);
   const [url, setUrl] = useState("");
-  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
-
-  useEffect(() => {
-    api.get("/subjects").then((res) => setSubjects(res.data?.data || []));
-  }, []);
+  const { data: subjects = [] } = useSubjects();
+  const importPdf = useImportPdf();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -36,7 +34,6 @@ export default function ImportPDF() {
       return;
     }
 
-    setLoading(true);
     try {
       const formData = new FormData();
       formData.append("subject_id", subjectId);
@@ -48,16 +45,12 @@ export default function ImportPDF() {
         formData.append("url", url);
       }
 
-      await api.post("/data/import/pdf", formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
+      await importPdf.mutateAsync(formData);
       
       toast.success("PDF sent to Mistral OCR pipeline. Check Staging Queue!");
       navigate("/data/staging");
     } catch (err) {
       toast.error(err.response?.data?.error?.message || "Failed to start import.");
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -82,16 +75,15 @@ export default function ImportPDF() {
             {/* 1. Subject */}
             <div className="space-y-2">
               <label className="text-sm font-medium">1. Select Target Subject</label>
-              <select 
+              <AppSelect
                 value={subjectId} 
-                onChange={(e) => setSubjectId(e.target.value)}
-                className="w-full h-11 pl-3 pr-8 text-sm bg-background border border-border rounded-md appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2020%2020%22%3E%3Cpath%20stroke%3D%22%236b7280%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%221.5%22%20d%3D%22m6%208%204%204%204-4%22%2F%3E%3C%2Fsvg%3E')] bg-[position:right_12px_center] bg-[size:16px] bg-no-repeat focus:ring-2 focus:ring-primary focus:border-transparent outline-none"
-              >
-                <option value="" disabled>Select a subject...</option>
-                {subjects.map((s) => (
-                  <option key={s.subject_id} value={s.subject_id}>{s.name}</option>
-                ))}
-              </select>
+                onChange={setSubjectId}
+                className="w-full"
+                options={[
+                  { value: "", label: "Select a subject..." },
+                  ...subjects.map((s) => ({ value: s.subject_id, label: s.name })),
+                ]}
+              />
             </div>
 
             {/* 2. Source label */}
@@ -170,8 +162,8 @@ export default function ImportPDF() {
               )}
             </div>
 
-            <Button type="submit" disabled={loading} className="w-full h-12 text-base">
-              {loading ? <Loader2 className="w-5 h-5 mr-2 animate-spin" /> : null}
+            <Button type="submit" disabled={importPdf.isPending} className="w-full h-12 text-base">
+              {importPdf.isPending ? <Loader2 className="w-5 h-5 mr-2 animate-spin" /> : null}
               Start OCR Ingestion
             </Button>
           </form>

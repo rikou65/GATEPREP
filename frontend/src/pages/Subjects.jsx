@@ -1,12 +1,11 @@
-import React, { useEffect, useState } from "react";
-import { api } from "@/lib/api";
+import React from "react";
 import { Link } from "react-router-dom";
 import { ChevronRight } from "lucide-react";
 import Layout from "@/components/Layout";
+import { useSubjects } from "@/features/subjects/hooks/useSubjects";
 
 export default function Subjects() {
-  const [subjects, setSubjects] = useState([]);
-  useEffect(() => { api.get("/subjects").then(r => setSubjects(r.data?.data || [])); }, []);
+  const { data: subjects = [] } = useSubjects();
   return (
     <Layout title="Subjects">
       <div className="space-y-8">

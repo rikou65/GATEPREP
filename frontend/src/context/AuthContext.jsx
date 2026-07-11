@@ -1,40 +1,13 @@
-import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
-import { api } from "@/lib/api";
+import React, { createContext, useContext } from "react";
+import { useAuthProvider } from "@/features/auth/hooks/useAuth";
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
-
-  const checkAuth = useCallback(async () => {
-    try {
-      const r = await api.get("/auth/me");
-      setUser(r.data?.data?.user || null);
-    } catch {
-      setUser(null);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
-    if (window.location.hash?.includes("session_id=")) {
-      setLoading(false);
-      return;
-    }
-    checkAuth();
-  }, [checkAuth]);
-
-  const logout = async () => {
-    try { await api.post("/auth/logout"); } catch {}
-    setUser(null);
-    window.location.href = "/";
-  };
+  const auth = useAuthProvider();
 
   return (
-    <AuthContext.Provider value={{ user, setUser, loading, checkAuth, logout }}>
+    <AuthContext.Provider value={auth}>
       {children}
     </AuthContext.Provider>
   );

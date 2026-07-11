@@ -1,14 +1,12 @@
-import React, { useEffect, useState } from "react";
-import { api } from "@/lib/api";
+import React from "react";
 import { Link, useParams } from "react-router-dom";
 import { BookCheck, History, FileText, AlertOctagon } from "lucide-react";
 import Layout from "@/components/Layout";
+import { useTopicAnalytics } from "@/features/dashboard/hooks/useDashboard";
 
 export default function TopicDetail() {
   const { id } = useParams();
-  const [data, setData] = useState(null);
-
-  useEffect(() => { api.get(`/analytics/topic/${id}`).then(r => setData(r.data?.data)); }, [id]);
+  const { data } = useTopicAnalytics(id);
 
   if (!data) return (
     <Layout title="Topic Detail">

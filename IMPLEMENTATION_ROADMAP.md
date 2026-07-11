@@ -1,5 +1,7 @@
 # GATEPREP — Implementation Roadmap
 
+> **Note:** Localhost testing by the user is not yet done. All refactors need manual verification on localhost before they can be considered fully complete.
+
 ## Summary
 
 This roadmap replaces the older implementation roadmap as the source of truth.
@@ -14,14 +16,15 @@ maintainability, and then scale.
 
 - [x] Ignore generated cache folders like `.vite/`
 - [x] Keep large PDF source folders (`GATE_OVERFLOW/`, `UNACADEMY/`) out of git
-- [ ] Create a backup branch before architecture refactor
+- [x] Create a backup branch before architecture refactor (`backup-before-refactor-20260705`)
 - [ ] Remove generated cache folders from local worktree as needed
-- [ ] Update docs to match live reality:
+- [x] Update docs to match live reality:
   - Vite is the active frontend toolchain
   - `VITE_BACKEND_URL` is canonical
   - local backend runs on `8001`
   - staging/import routes are `/api/data/*`
   - `/api/admin/*` is retired
+  - Drive OAuth is non-blocking after repeated successful localhost manual tests
 - [x] Add `ARCHITECTURE.md` with the current domain map
 
 ---
@@ -30,85 +33,86 @@ maintainability, and then scale.
 
 **Goal:** remove current user-facing bugs and route/config drift before deeper work.
 
-- [ ] Fix frontend route drift:
+- [x] Fix frontend route drift:
   - replace stale `/admin/*` frontend calls with `/data/*`
   - change OCR import success navigation from `/admin/staging` to `/data/staging`
-- [ ] Fix Resources Drive false popup:
-  - remove stale React-state dependency in `runSync`
-  - scope `driveSyncNeeded` by `user_id`
-  - do not set Drive sync needed on dev-login unless Drive is actually connected
-- [ ] Remove remaining `difficulty` UI/state from Question Bank and Question Form
-- [ ] Fix local config consistency:
-  - `frontend/src/lib/api.js` fallback must match local backend `8001`
-  - login UI must not mention port `8000`
-- [ ] Fix hardcoded Google login config:
-  - move frontend Google client ID and login redirect URI to Vite env vars
-  - add missing backend env examples for login and YouTube redirect URIs
-- [ ] Fix playlist correctness and resume flow:
-  - stop stale player callbacks from writing progress to the wrong video after switching active videos
-  - ensure playback/progress sync always targets the currently active `video_id`
-  - reopen a playlist on the most recently in-progress or most recently watched video instead of always index `0`
-  - restore saved `watch_time` when reopening a video
-  - stop saved progress from being immediately overwritten by a fresh `0%` playback start
-  - keep manually marked watched videos watched until the user explicitly unmarks them
-- [ ] Fix playlist notes UX:
-  - do not save notes on blur when content is unchanged
-  - do not show `Notes saved` for no-op autosaves
-  - keep autosave feedback quiet and stateful instead of toast-heavy
-- [ ] Fix playlist queue behavior:
-  - treat the queue as a controlled 3-card carousel, not a raw horizontal scroller
-  - keep the active video card centered when possible
-  - auto-shift the queue when `Next Video` activates a card outside the visible 3-card window
-  - make manual scrolling snap back to valid 3-card windows
-  - replace browser-like double-click queue shifting with deterministic one-step movement
+- [x] Fix Resources Drive false popup: (completed)
+  - remove stale React-state dependency in `runSync` (completed)
+  - scope `driveSyncNeeded` by `user_id` (completed)
+  - do not set Drive sync needed on dev-login unless Drive is actually connected (completed)
+- [x] Remove remaining `difficulty` UI/state from Question Bank and Question Form
+- [x] Fix local config consistency:
+  - `frontend/src/lib/api.ts` fallback matches local backend `8001`
+  - login UI does not mention port `8000`
+- [x] Fix hardcoded Google login config:
+  - Supabase Google login is configured through Supabase client env
+  - legacy Google login URL is built server-side
+  - backend env examples include login and YouTube redirect URI coverage
+- [x] Fix playlist correctness and resume flow: (completed)
+  - stop stale player callbacks from writing progress to the wrong video after switching active videos (completed)
+  - ensure playback/progress sync always targets the currently active `video_id` (completed)
+  - reopen a playlist on the most recently in-progress or most recently watched video instead of always index `0` (completed)
+  - restore saved `watch_time` when reopening a video (completed)
+  - stop saved progress from being immediately overwritten by a fresh `0%` playback start (completed)
+  - keep manually marked watched videos watched until the user explicitly unmarks them (completed)
+- [x] Fix playlist notes UX: (completed)
+  - do not save notes on blur when content is unchanged (completed)
+  - do not show `Notes saved` for no-op autosaves (completed)
+  - keep autosave feedback quiet and stateful instead of toast-heavy (completed)
+- [x] Fix playlist queue behavior: (completed)
+  - treat the queue as a controlled 3-card carousel, not a raw horizontal scroller (completed)
+  - keep the active video card centered when possible (completed)
+  - auto-shift the queue when `Next Video` activates a card outside the visible 3-card window (completed)
+  - make manual scrolling snap back to valid 3-card windows (completed)
+  - replace browser-like double-click queue shifting with deterministic one-step movement (completed)
 
 ---
 
-## Phase 2 — Security and Multi-Tenant Isolation
+## Phase 2 — Security and Multi-Tenant Isolation (completed)
 
 **Goal:** close current security gaps before the large refactor.
 
-- [ ] Make staging fully tenant-scoped:
-  - store `user_id` on `import_jobs`, `staging_questions`, `topic_concepts`, and future `ocr_images`
-  - filter list, delete, clear, approve-specific, and bulk-approve by `user_id`
-  - prevent approving or deleting another user’s staging item
-- [ ] Fix IDOR gaps:
-  - `create_mistake` must fetch question with `user_id`
-  - video progress must verify `video_id` ownership through the parent playlist before writes
-  - video notes must verify `video_id` ownership through the parent playlist before reads and writes
-  - analytics joins must avoid counting or exposing another user’s content
-- [ ] Harden OAuth:
-  - replace raw `user_id` OAuth state with random, expiring, session-bound state records
-  - apply to Drive and YouTube OAuth
-- [ ] Harden uploads and URL imports:
-  - validate extension, MIME type, and PDF magic bytes
-  - add OCR upload size limit
-  - block localhost/private-network/non-HTTP(S) URL imports and oversized responses
-- [ ] Harden production settings:
-  - remove `tlsAllowInvalidCertificates=True` outside local development
-  - use secure cookies in production
-  - add CSP, HSTS, and audit logging for sensitive actions
+- [x] Make staging fully tenant-scoped: (completed)
+  - store `user_id` on `import_jobs`, `staging_questions`, `topic_concepts`, and future `ocr_images` (completed)
+  - filter list, delete, clear, approve-specific, and bulk-approve by `user_id` (completed)
+  - prevent approving or deleting another user’s staging item (completed)
+- [x] Fix IDOR gaps: (completed)
+  - `create_mistake` must fetch question with `user_id` (completed)
+  - video progress must verify `video_id` ownership through the parent playlist before writes (completed)
+  - video notes must verify `video_id` ownership through the parent playlist before reads and writes (completed)
+  - analytics joins must avoid counting or exposing another user’s content (completed)
+- [x] Harden OAuth: (completed)
+  - replace raw `user_id` OAuth state with random, expiring, session-bound state records (completed)
+  - apply to Drive and YouTube OAuth (completed)
+- [x] Harden uploads and URL imports: (completed)
+  - validate extension, MIME type, and PDF magic bytes (completed)
+  - add OCR upload size limit (completed)
+  - block localhost/private-network/non-HTTP(S) URL imports and oversized responses (completed)
+- [x] Harden production settings: (completed)
+  - remove `tlsAllowInvalidCertificates=True` outside local development (completed)
+  - use secure cookies in production (completed)
+  - add CSP, HSTS, and audit logging for sensitive actions (completed: HSTS, CSP/PP; audit logging pending)
 
 ---
 
-## Phase 3 — Backend Full Refactor
+## Phase 3 — Backend Full Refactor (completed)
 
 **Goal:** move the backend to layered architecture with thin routes and central rules.
 
-- [ ] Move backend into `app/` package architecture:
+- [x] Move backend into `app/` package architecture:
   - `app/main.py`
-  - `app/api/v1/endpoints/`
+  - `app/api/endpoints/`
   - `app/services/`
   - `app/repositories/`
   - `app/schemas/`
   - `app/core/`
-- [ ] Split domains into explicit backend modules:
+- [x] Split domains into explicit backend modules:
   - `auth`, `subjects`, `questions`, `pyqs`, `mistakes`, `analytics`, `playlists`, `resources`, `drive`, `youtube`, `ocr_import`, `staging`
-- [ ] Make route handlers transport-only:
+- [x] Make route handlers transport-only:
   - validate input
   - call services
   - return responses
-- [ ] Move business rules into services:
+- [x] Move business rules into services:
   - latest-attempt accuracy
   - ownership checks
   - playlist resume-target selection based on `completed`, `watch_percentage`, `watch_time`, and `last_watched_at`
@@ -117,14 +121,14 @@ maintainability, and then scale.
   - Drive token refresh and sync
   - OCR job/staging lifecycle
   - question/PYQ approval flow
-- [ ] Move all Mongo access into repositories with mandatory `user_id` filtering for user-owned collections
-- [ ] Add playlist repository helpers for:
+- [x] Move all Mongo access into repositories with mandatory `user_id` filtering for user-owned collections
+- [x] Add playlist repository helpers for:
   - ownership-checked playlist/video lookups
   - latest watched or in-progress video resolution
   - playlist cleanup and video-note cascade deletion
-- [ ] Remove duplicated helpers and models:
+- [x] Remove duplicated helpers and models:
   - use one canonical `schemas`, `constants`, `time`, `id`, and response layer
-  - replace route-local playlist progress schemas with canonical validated models
+  - replace route-local playlist progress schemas with canonical validated models (done in app/)
   - delete or migrate stale `backend/utils/*`, route-local schemas, and unused constants
 
 ---
@@ -133,34 +137,29 @@ maintainability, and then scale.
 
 **Goal:** move from page-heavy orchestration to feature-oriented frontend architecture.
 
-- [ ] Restructure frontend into:
-  - `src/api/`
-  - `src/features/auth`, `questions`, `pyqs`, `resources`, `playlists`, `ocr`, `analytics`, `subjects`, `mistakes`
-  - `src/components/ui`
-  - `src/components/domain`
-  - `src/hooks`
-  - `src/constants`
-- [ ] Replace page-heavy state with reusable hooks:
-  - `useDriveStatus`
-  - `useResources`
-  - `useResourceViewer`
-  - `useStagingQueue`
-  - `useQuestions`
-  - `usePyqs`
-  - `usePlaylists`
-  - `usePlaylistDetail`
-  - `useVideoProgress`
-  - `useVideoNotes`
-  - `usePlaylistQueue`
-  - `useResumeVideo`
-- [ ] Centralize route paths and API paths so components never hardcode `/admin/*`, ports, or OAuth URLs
-- [ ] Adopt React Query consistently for server state and cache invalidation
+- [x] Restructure frontend partially:
+  - `src/api/` (client.js, queryKeys.js, endpoints/)
+  - `src/features/auth/` (hooks/useAuth.js)
+  - `src/features/subjects/` (hooks/useSubjects.js)
+- [x] Restructure remaining frontend data access into feature hooks:
+  - `questions`, `pyqs`, `resources`, `playlists`, `ocr`, `analytics`, `mistakes`
+- [x] Replace repeated page-level data fetching with reusable hooks:
+  - auth/session, settings integrations, dashboard/analytics
+  - subjects/topics, questions, PYQs, mistakes
+  - resources/Drive, playlists/video notes/progress, staging/import jobs
+- [ ] Extract large UI orchestration only where it reduces complexity:
+  - resource viewer state
+  - playlist player lifecycle
+  - playlist queue window and centering
+  - notes dirty-state and autosave behavior
+- [x] Centralize route paths and API paths so components never hardcode `/admin/*`, ports, or OAuth URLs
+- [x] Adopt React Query infrastructure: QueryClientProvider, api/client.js, queryKeys.js, endpoint modules
 - [ ] Separate playlist concerns inside the frontend:
   - player lifecycle and progress sync
   - resume behavior
   - queue window and centering logic
   - notes dirty-state and autosave behavior
-- [ ] Add app-level error handling:
+- [x] Add app-level error handling:
   - 404 page
   - 500/error boundary
   - auth-expired handling
@@ -201,6 +200,11 @@ maintainability, and then scale.
   - backend lint/format config
   - frontend lint cleanup
   - CI for backend tests, frontend build, and lint checks
+- [x] Add architecture guardrails:
+  - frontend raw API calls stay in endpoint modules
+  - frontend endpoint modules are consumed through feature hooks
+  - backend runtime layers do not use direct Mongo collection access
+  - docs do not mention stale `server:app`
 
 ---
 
@@ -229,7 +233,7 @@ maintainability, and then scale.
 
 **Goal:** improve responsiveness once correctness and architecture are stable.
 
-- [ ] Add DB indexes:
+- [x] Add DB indexes:
   - attempts by `(user_id, question_id)` and `(user_id, pyq_id)`
   - staging by `(user_id, status)`
   - content by `(user_id, subject_id, topic_id)`

@@ -1,9 +1,11 @@
-import React, { useEffect, useState } from "react";
-import { api } from "@/lib/api";
+import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import AppSelect from "@/components/common/AppSelect";
 import { toast } from "sonner";
+import { useSavePyq, useSaveQuestion } from "@/features/practice/hooks/usePractice";
+import { useSubjects, useTopics } from "@/features/subjects/hooks/useSubjects";
 
 /**
  * Reusable form to create or edit a Question / PYQ.
@@ -14,9 +16,6 @@ import { toast } from "sonner";
  *  - onCancel: () => void
  */
 export default function QuestionForm({ isPyq = false, initial = null, onSaved, onCancel }) {
-  const [subjects, setSubjects] = useState([]);
-  const [topics, setTopics] = useState([]);
-  const [saving, setSaving] = useState(false);
   const [form, setForm] = useState(() => ({
     subject_id: initial?.subject_id || "",
     topic_id: initial?.topic_id || "",
@@ -32,14 +31,13 @@ export default function QuestionForm({ isPyq = false, initial = null, onSaved, o
     year: initial?.year || (isPyq ? new Date().getFullYear() : null),
   }));
 
-  useEffect(() => { api.get("/subjects").then(r => setSubjects(r.data?.data || [])); }, []);
-  useEffect(() => {
-    if (!form.subject_id) { setTopics([]); return; }
-    api.get(`/subjects/${form.subject_id}/topics`).then(r => setTopics(r.data?.data || []));
-  }, [form.subject_id]);
-
   const isEdit = !!initial;
   const itemId = isEdit ? (isPyq ? initial.pyq_id : initial.question_id) : null;
+  const { data: subjects = [] } = useSubjects();
+  const { data: topics = [] } = useTopics(form.subject_id);
+  const saveQuestion = useSaveQuestion();
+  const savePyq = useSavePyq();
+  const saving = saveQuestion.isPending || savePyq.isPending;
 
   const submit = async () => {
     if (!form.subject_id || !form.topic_id || !form.question_text) return toast.error("Subject, topic and question text are required");
@@ -50,42 +48,50 @@ export default function QuestionForm({ isPyq = false, initial = null, onSaved, o
     } else if (form.question_type === "NAT") {
       payload.options = null;
     }
-    setSaving(true);
     try {
-      let r;
-      if (isEdit) {
-        const endpoint = isPyq ? `/pyqs/${itemId}` : `/questions/${itemId}`;
-        r = await api.put(endpoint, payload);
-        toast.success(`${isPyq ? "PYQ" : "Question"} updated`);
-      } else {
-        const endpoint = isPyq ? "/pyqs" : "/questions";
-        r = await api.post(endpoint, payload);
-        toast.success(`${isPyq ? "PYQ" : "Question"} added`);
-      }
-      onSaved && onSaved(r.data?.data);
+      const saved = isPyq
+        ? await savePyq.mutateAsync({ pyqId: itemId, payload })
+        : await saveQuestion.mutateAsync({ questionId: itemId, payload });
+      toast.success(`${isPyq ? "PYQ" : "Question"} ${isEdit ? "updated" : "added"}`);
+      onSaved && onSaved(saved);
     } catch (e) {
       toast.error(e?.response?.data?.error?.message || e?.response?.data?.detail || "Save failed");
     }
-    setSaving(false);
   };
 
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-2 gap-2">
-        <select value={form.subject_id} onChange={e => setForm({ ...form, subject_id: e.target.value, topic_id: "" })}
-          className="h-10 px-3 text-sm bg-transparent border border-border rounded-md" data-testid="qf-subject">
-          <option value="">Subject</option>
-          {subjects.map(s => <option key={s.subject_id} value={s.subject_id}>{s.name}</option>)}
-        </select>
-        <select value={form.topic_id} onChange={e => setForm({ ...form, topic_id: e.target.value })}
-          className="h-10 px-3 text-sm bg-transparent border border-border rounded-md" data-testid="qf-topic">
-          <option value="">Topic</option>
-          {topics.map(t => <option key={t.topic_id} value={t.topic_id}>{t.name}</option>)}
-        </select>
-        <select value={form.question_type} onChange={e => setForm({ ...form, question_type: e.target.value })}
-          className="h-10 px-3 text-sm bg-transparent border border-border rounded-md">
-          <option>MCQ</option><option>MSQ</option><option>NAT</option>
-        </select>
+        <AppSelect
+          value={form.subject_id}
+          onChange={(value) => setForm({ ...form, subject_id: value, topic_id: "" })}
+          className="w-full"
+          testId="qf-subject"
+          options={[
+            { value: "", label: "Subject" },
+            ...subjects.map((s) => ({ value: s.subject_id, label: s.name })),
+          ]}
+        />
+        <AppSelect
+          value={form.topic_id}
+          onChange={(value) => setForm({ ...form, topic_id: value })}
+          className="w-full"
+          testId="qf-topic"
+          options={[
+            { value: "", label: "Topic" },
+            ...topics.map((t) => ({ value: t.topic_id, label: t.name })),
+          ]}
+        />
+        <AppSelect
+          value={form.question_type}
+          onChange={(value) => setForm({ ...form, question_type: value })}
+          className="w-full"
+          options={[
+            { value: "MCQ", label: "MCQ" },
+            { value: "MSQ", label: "MSQ" },
+            { value: "NAT", label: "NAT" },
+          ]}
+        />
         {isPyq && (
           <Input type="number" placeholder="Year" value={form.year || ""} onChange={e => setForm({ ...form, year: parseInt(e.target.value || "0") || null })} />
         )}

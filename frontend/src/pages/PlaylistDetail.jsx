@@ -1,10 +1,15 @@
 import React, { useEffect, useRef, useState } from "react";
-import { api } from "@/lib/api";
 import { Link, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { CheckCircle2, Circle, ArrowLeft, ChevronRight, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 import Layout from "@/components/Layout";
+import {
+  usePlaylist,
+  useSaveVideoNotes,
+  useSaveVideoProgress,
+  useVideoNotes,
+} from "@/features/playlists/hooks/usePlaylists";
 
 function formatDuration(seconds) {
   if (!seconds) return "0m";
@@ -49,10 +54,15 @@ export default function PlaylistDetail() {
 
   const [notes, setNotes] = useState("");
   const [lastSavedNotes, setLastSavedNotes] = useState("");
-  const [savingNote, setSavingNote] = useState(false);
+  const { data: playlistData } = usePlaylist(id);
+  const active = playlist?.videos?.[activeIdx];
+  const { data: videoNotes } = useVideoNotes(active?.video_id);
+  const saveVideoNotes = useSaveVideoNotes(active?.video_id);
+  const saveVideoProgress = useSaveVideoProgress(id);
 
-  const load = () => api.get(`/playlists/${id}`).then(r => setPlaylist(r.data?.data));
-  useEffect(() => { load(); }, [id]);
+  useEffect(() => {
+    if (playlistData) setPlaylist(playlistData);
+  }, [playlistData]);
 
   // Resume to the best video on initial load
   useEffect(() => {
@@ -63,22 +73,16 @@ export default function PlaylistDetail() {
     }
   }, [playlist, resumed]);
 
-  const active = playlist?.videos?.[activeIdx];
-
   useEffect(() => {
     if (!active) {
       setNotes("");
       setLastSavedNotes("");
       return;
     }
-    api.get(`/videos/${active.video_id}/notes`)
-      .then(r => {
-        const c = r.data?.data?.note_content || "";
-        setNotes(c);
-        setLastSavedNotes(c);
-      })
-      .catch(() => { setNotes(""); setLastSavedNotes(""); });
-  }, [active?.video_id]);
+    const content = videoNotes?.note_content || "";
+    setNotes(content);
+    setLastSavedNotes(content);
+  }, [active?.video_id, videoNotes?.note_content]);
 
   // Scroll the vertical queue to keep the active row visible
   useEffect(() => {
@@ -91,14 +95,12 @@ export default function PlaylistDetail() {
 
   const saveNotes = async () => {
     if (!active || notes === lastSavedNotes) return;
-    setSavingNote(true);
     try {
-      await api.post(`/videos/${active.video_id}/notes`, { note_content: notes });
+      await saveVideoNotes.mutateAsync(notes);
       setLastSavedNotes(notes);
     } catch {
       toast.error("Failed to save notes");
     }
-    setSavingNote(false);
   };
 
   // Destroy and recreate YouTube player on active video change to prevent stale callbacks
@@ -165,9 +167,12 @@ export default function PlaylistDetail() {
     const video = playlist?.videos?.[activeIdx];
     if (!video) return;
     try {
-      await api.post(`/videos/${video.video_id}/progress`, {
+      await saveVideoProgress.mutateAsync({
+        videoId: video.video_id,
+        payload: {
         watch_percentage: pct,
         watch_time: typeof watchTime === "number" ? watchTime : 0,
+        },
       });
       setPlaylist((prev) => {
         if (!prev) return prev;
@@ -181,7 +186,10 @@ export default function PlaylistDetail() {
   const markWatched = async (idx) => {
     const video = playlist.videos[idx];
     try {
-      await api.post(`/videos/${video.video_id}/progress`, { watch_percentage: 100, watch_time: video.duration || 0, completed: true });
+      await saveVideoProgress.mutateAsync({
+        videoId: video.video_id,
+        payload: { watch_percentage: 100, watch_time: video.duration || 0, completed: true },
+      });
       setPlaylist((prev) => ({
         ...prev,
         videos: prev.videos.map((v, i) => i === idx
@@ -195,7 +203,10 @@ export default function PlaylistDetail() {
   const unmark = async (idx) => {
     const video = playlist.videos[idx];
     try {
-      await api.post(`/videos/${video.video_id}/progress`, { watch_percentage: 0, watch_time: 0, completed: false });
+      await saveVideoProgress.mutateAsync({
+        videoId: video.video_id,
+        payload: { watch_percentage: 0, watch_time: 0, completed: false },
+      });
       setPlaylist((prev) => ({
         ...prev,
         videos: prev.videos.map((v, i) => i === idx
@@ -353,7 +364,7 @@ export default function PlaylistDetail() {
               <div className="flex justify-between items-center shrink-0">
                 <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Video Notes</h3>
                 <span className="text-[10px] font-mono text-muted-foreground">
-                  {savingNote ? "Saving..." : "Auto-saved"}
+                  {saveVideoNotes.isPending ? "Saving..." : "Auto-saved"}
                 </span>
               </div>
               <textarea

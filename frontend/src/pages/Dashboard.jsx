@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from "react";
-import { api } from "@/lib/api";
+import React from "react";
 import { Link } from "react-router-dom";
+import { useDashboard } from "@/features/dashboard/hooks/useDashboard";
 import { ArrowUpRight, Target, BookCheck, History, ListVideo, AlertOctagon, FolderArchive, TrendingUp, Library } from "lucide-react";
 import Layout from "@/components/Layout";
 
@@ -18,8 +18,7 @@ const StatCard = ({ icon: Icon, label, value, suffix, testId }) => (
 );
 
 export default function Dashboard() {
-  const [data, setData] = useState(null);
-  useEffect(() => { api.get("/dashboard").then((r) => setData(r.data?.data)); }, []);
+  const { data } = useDashboard();
 
   if (!data) return (
     <Layout title="Dashboard">

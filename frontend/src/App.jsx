@@ -1,9 +1,12 @@
 import React from "react";
 import "@/App.css";
-import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider } from "@/context/AuthContext";
 import { Toaster } from "@/components/ui/sonner";
+import { queryClient } from "@/api/client";
 import ProtectedRoute from "@/components/ProtectedRoute";
+import AppErrorBoundary from "@/components/AppErrorBoundary";
 
 import Login from "@/pages/Login";
 import AuthCallback from "@/pages/AuthCallback";
@@ -21,6 +24,7 @@ import Analytics from "@/pages/Analytics";
 import Settings from "@/pages/Settings";
 import StagingQueue from "@/pages/StagingQueue";
 import ImportPDF from "@/pages/ImportPDF";
+import NotFound from "@/pages/NotFound";
 
 function AppRouter() {
   return (
@@ -41,6 +45,7 @@ function AppRouter() {
       <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
       <Route path="/data/staging" element={<ProtectedRoute><StagingQueue /></ProtectedRoute>} />
       <Route path="/data/import" element={<ProtectedRoute><ImportPDF /></ProtectedRoute>} />
+      <Route path="*" element={<NotFound />} />
     </Routes>
   );
 }
@@ -49,10 +54,14 @@ export default function App() {
   return (
     <div className="App dark">
       <BrowserRouter>
-        <AuthProvider>
-          <AppRouter />
-          <Toaster theme="dark" position="top-right" />
-        </AuthProvider>
+        <QueryClientProvider client={queryClient}>
+          <AuthProvider>
+            <AppErrorBoundary>
+              <AppRouter />
+            </AppErrorBoundary>
+            <Toaster theme="dark" position="top-right" />
+          </AuthProvider>
+        </QueryClientProvider>
       </BrowserRouter>
     </div>
   );

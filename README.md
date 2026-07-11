@@ -119,15 +119,16 @@ Current local reality:
 - Vite
 - Tailwind CSS
 - shadcn/ui
+- TanStack React Query
 
 ### Backend
-- FastAPI
-- Motor
-- MongoDB
+- FastAPI (layered architecture: endpoints → services → repositories)
+- Motor + MongoDB
 - Pydantic
 
 ### Integrations
-- Google OAuth
+- Google OAuth (login + Drive + YouTube)
+- Supabase Auth (dual-auth compatible)
 - Google Drive API
 - YouTube API / IFrame player
 - Mistral OCR
@@ -139,18 +140,41 @@ Current local reality:
 ```text
 .
 ├── backend/
-│   ├── routes/
+│   ├── app/
+│   │   ├── main.py
+│   │   ├── api/
+│   │   │   ├── deps.py
+│   │   │   ├── responses.py
+│   │   │   └── endpoints/       (auth, subjects, practice, analytics,
+│   │   │                         playlists, resources, youtube, staging)
+│   │   ├── core/                (config, db, time, ids, security, constants, logging)
+│   │   ├── schemas/             (canonical Pydantic models)
+│   │   ├── services/            (business logic)
+│   │   ├── repositories/        (MongoDB access)
+│   │   ├── integrations/        (google_oauth, supabase_auth, google_drive, google_youtube)
+│   │   ├── bootstrap/           (seed data and migration startup)
+│   │   └── tasks/               (background workers placeholder)
 │   ├── tests/
-│   ├── config.py
-│   ├── server.py
-│   └── shared.py
+│   ├── scripts/
+│   └── requirements.txt
 ├── frontend/
 │   ├── src/
+│   │   ├── api/                 (typed client, query keys, endpoint modules)
 │   │   ├── components/
 │   │   ├── context/
+│   │   ├── features/
+│   │   │   ├── auth/
+│   │   │   ├── dashboard/
+│   │   │   ├── playlists/
+│   │   │   ├── resources/
+│   │   │   ├── settings/
+│   │   │   ├── staging/
+│   │   │   └── subjects/
 │   │   ├── lib/
+│   │   ├── types/
 │   │   └── pages/
 ├── ARCHITECTURE.md
+├── AUTH_STRATEGY.md
 ├── CONTRIBUTING.md
 ├── IMPLEMENTATION_ROADMAP.md
 ├── OCR_PIPELINE.md
@@ -230,15 +254,23 @@ Examples:
 
 ```powershell
 cd backend
-& ../venv/Scripts/python.exe -m uvicorn server:app --host 127.0.0.1 --port 8001
+& ../venv/Scripts/python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8001
 ```
 
 ### Frontend
 
 ```powershell
 cd frontend
-node_modules/.bin/vite.cmd --host 127.0.0.1 --port 3000
+node_modules/.bin/vite.cmd --host 127.0.0.1 --port 3000 --strictPort
 ```
+
+### Auth and OAuth notes
+
+- Supabase Auth is the primary login path for Google and email/password.
+- MongoDB remains the application database; Supabase is auth-only.
+- Legacy Google login can remain temporarily as a fallback until Supabase is fully verified.
+- Drive and YouTube use their own Google OAuth flows and do not reuse Supabase provider tokens.
+- Local Google Drive and YouTube OAuth may show tester/verification limits until the Google Cloud OAuth consent screen is published or the account is added as a tester.
 
 ---
 
@@ -255,8 +287,10 @@ Example `frontend/.env`:
 
 ```env
 VITE_BACKEND_URL=http://127.0.0.1:8001
-VITE_GOOGLE_CLIENT_ID=
-VITE_GOOGLE_LOGIN_REDIRECT_URI=http://127.0.0.1:3000/auth/callback
+VITE_SUPABASE_URL=
+VITE_SUPABASE_ANON_KEY=
+VITE_GOOGLE_CLIENT_ID=  (deprecated — login URL now built server-side via /auth/google-url)
+VITE_GOOGLE_LOGIN_REDIRECT_URI=http://127.0.0.1:3000/auth/callback  (deprecated — login redirect managed server-side)
 ```
 
 ### Backend common variables
@@ -271,6 +305,8 @@ Typical `backend/.env` values:
 - `GOOGLE_LOGIN_REDIRECT_URI`
 - `GOOGLE_DRIVE_REDIRECT_URI`
 - `GOOGLE_YOUTUBE_REDIRECT_URI`
+- `SUPABASE_URL`
+- `SUPABASE_JWT_SECRET`
 - `FRONTEND_URL`
 - `YOUTUBE_API_KEY`
 - `MISTRAL_API_KEY`

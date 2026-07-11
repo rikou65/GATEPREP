@@ -1,18 +1,14 @@
-import React, { useEffect, useState } from "react";
-import { api } from "@/lib/api";
+import React from "react";
 import { Link, useParams } from "react-router-dom";
 import { BookCheck, History, FileText, Sparkles, ArrowUpRight } from "lucide-react";
 import Layout from "@/components/Layout";
+import { useSubject } from "@/features/subjects/hooks/useSubjects";
+import { useSubjectAnalytics } from "@/features/dashboard/hooks/useDashboard";
 
 export default function SubjectDetail() {
   const { id } = useParams();
-  const [subject, setSubject] = useState(null);
-  const [rows, setRows] = useState([]);
-
-  useEffect(() => {
-    api.get(`/subjects/${id}`).then(r => setSubject(r.data?.data));
-    api.get(`/analytics/subject/${id}`).then(r => setRows(r.data?.data || []));
-  }, [id]);
+  const { data: subject } = useSubject(id);
+  const { data: rows = [] } = useSubjectAnalytics(id);
 
   if (!subject) return (
     <Layout title="Subject Detail">
