@@ -11,6 +11,8 @@ from fastapi.testclient import TestClient
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo.errors import PyMongoError
 
+from tests.support import API, json_session_headers
+
 # Setup sys.path to include backend/
 backend_dir = Path(__file__).parent.parent
 if str(backend_dir) not in sys.path:
@@ -208,4 +210,45 @@ def pytest_sessionfinish(session, exitstatus):
     if test_client:
         test_client.__exit__(None, None, None)
         test_client = None
+
+
+@pytest.fixture(scope="session")
+def auth_headers():
+    return json_session_headers(TEST_AUTH_TOKEN)
+
+
+@pytest.fixture(scope="session")
+def user_headers():
+    return json_session_headers(TEST_USER_TOKEN)
+
+
+@pytest.fixture(scope="session")
+def primary_headers():
+    return json_session_headers(TEST_PRIMARY_TOKEN)
+
+
+@pytest.fixture(scope="session")
+def secondary_headers():
+    return json_session_headers(TEST_SECONDARY_TOKEN)
+
+
+@pytest.fixture(scope="session")
+def subjects(auth_headers):
+    r = requests.get(f"{API}/subjects", headers=auth_headers)
+    assert r.status_code == 200
+    return r.json()["data"]
+
+
+@pytest.fixture(scope="session")
+def questions(auth_headers):
+    r = requests.get(f"{API}/questions", headers=auth_headers)
+    assert r.status_code == 200
+    return r.json()["data"]["items"]
+
+
+@pytest.fixture(scope="session")
+def pyqs(auth_headers):
+    r = requests.get(f"{API}/pyqs", headers=auth_headers)
+    assert r.status_code == 200
+    return r.json()["data"]["items"]
 

@@ -1,51 +1,9 @@
 """Backend integration tests for GATEPREP."""
-import os
 from typing import Dict, List, Any
 
-import pytest
 import requests
 
-BASE_URL: str = os.environ.get(
-    "VITE_BACKEND_URL", "http://localhost:8001"
-).rstrip("/")
-API: str = f"{BASE_URL}/api"
-
-# Tokens created via mongosh seed (see /app/memory/test_credentials.md)
-AUTH_TOKEN: str | None = os.environ.get("AUTH_TOKEN")
-USER_TOKEN: str | None = os.environ.get("USER_TOKEN")
-
-
-@pytest.fixture(scope="session")
-def auth_headers() -> Dict[str, str]:
-    assert AUTH_TOKEN, "AUTH_TOKEN env required"
-    return {"Cookie": f"session_token={AUTH_TOKEN}", "Content-Type": "application/json"}
-
-
-@pytest.fixture(scope="session")
-def user_headers() -> Dict[str, str]:
-    assert USER_TOKEN, "USER_TOKEN env required"
-    return {"Cookie": f"session_token={USER_TOKEN}", "Content-Type": "application/json"}
-
-
-@pytest.fixture(scope="session")
-def subjects(auth_headers: Dict[str, str]) -> List[Dict[str, Any]]:
-    r = requests.get(f"{API}/subjects", headers=auth_headers)
-    assert r.status_code == 200
-    return r.json()["data"]
-
-
-@pytest.fixture(scope="session")
-def questions(auth_headers: Dict[str, str]) -> List[Dict[str, Any]]:
-    r = requests.get(f"{API}/questions", headers=auth_headers)
-    assert r.status_code == 200
-    return r.json()["data"]["items"]
-
-
-@pytest.fixture(scope="session")
-def pyqs(auth_headers: Dict[str, str]) -> List[Dict[str, Any]]:
-    r = requests.get(f"{API}/pyqs", headers=auth_headers)
-    assert r.status_code == 200
-    return r.json()["data"]["items"]
+from tests.support import API
 
 
 # --------- Public endpoints ---------

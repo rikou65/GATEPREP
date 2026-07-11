@@ -13,39 +13,11 @@ Covers:
 """
 from __future__ import annotations
 
-import os
 from typing import Any, Dict, List
 
-import pytest
 import requests
 
-BASE_URL: str = os.environ.get(
-    "VITE_BACKEND_URL", "http://localhost:8001"
-).rstrip("/")
-API: str = f"{BASE_URL}/api"
-
-PRIMARY_TOKEN: str | None = os.environ.get("PRIMARY_TOKEN")
-SECONDARY_TOKEN: str | None = os.environ.get("SECONDARY_TOKEN")
-
-
-# ---------- fixtures ----------
-@pytest.fixture(scope="session")
-def primary_headers() -> Dict[str, str]:
-    assert PRIMARY_TOKEN, "PRIMARY_TOKEN env required"
-    return {"Cookie": f"session_token={PRIMARY_TOKEN}", "Content-Type": "application/json"}
-
-
-@pytest.fixture(scope="session")
-def secondary_headers() -> Dict[str, str]:
-    assert SECONDARY_TOKEN, "SECONDARY_TOKEN env required"
-    return {"Cookie": f"session_token={SECONDARY_TOKEN}", "Content-Type": "application/json"}
-
-
-@pytest.fixture(scope="session")
-def subjects(primary_headers: Dict[str, str]) -> List[Dict[str, Any]]:
-    r = requests.get(f"{API}/subjects", headers=primary_headers)
-    assert r.status_code == 200
-    return r.json()["data"]
+from tests.support import API
 
 
 def _create_resource(headers: Dict[str, str], sid: str, title: str) -> str:

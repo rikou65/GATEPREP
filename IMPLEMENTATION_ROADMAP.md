@@ -160,7 +160,7 @@ maintainability, and then scale.
 **Goal:** make refactors safe and repeatable.
 
 - [x] Replace server-spawning tests with FastAPI client-based testing
-- [ ] Split tests into:
+- [x] Split tests into:
   - unit tests for pure logic and services
   - API tests for route contracts
   - integration tests for Mongo-backed flows
