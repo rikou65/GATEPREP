@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { useDashboard } from "@/features/dashboard/hooks/useDashboard";
 import { ArrowUpRight, Target, BookCheck, History, ListVideo, AlertOctagon, FolderArchive, TrendingUp, Library } from "lucide-react";
 import Layout from "@/components/Layout";
+import QueryError from "@/components/common/QueryError";
 
 const StatCard = ({ icon: Icon, label, value, suffix, testId }) => (
   <div className="border border-border rounded-lg p-5 bg-card/40 hover:border-border/80 transition-colors" data-testid={testId}>
@@ -18,7 +19,13 @@ const StatCard = ({ icon: Icon, label, value, suffix, testId }) => (
 );
 
 export default function Dashboard() {
-  const { data } = useDashboard();
+  const { data, isError, refetch } = useDashboard();
+
+  if (isError) return (
+    <Layout title="Dashboard">
+      <QueryError onRetry={refetch} />
+    </Layout>
+  );
 
   if (!data) return (
     <Layout title="Dashboard">

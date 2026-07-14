@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Plus, FileQuestion } from "lucide-react";
 import Layout from "@/components/Layout";
+import QueryError from "@/components/common/QueryError";
 import { toast } from "sonner";
 import { useQuestions, useQuestionNotes, useSaveQuestionNotes } from "@/features/practice/hooks/usePractice";
 import { useSubjects, useTopics } from "@/features/subjects/hooks/useSubjects";
@@ -26,7 +27,7 @@ export default function QuestionBank() {
 
   const { data: subjects = [] } = useSubjects();
   const { data: topics = [] } = useTopics(filter.subject_id);
-  const { data: questionData, refetch: refetchQuestions } = useQuestions(filter);
+  const { data: questionData, refetch: refetchQuestions, isError } = useQuestions(filter);
   const items = questionData?.items || [];
   const total = questionData?.total || 0;
 
@@ -100,7 +101,13 @@ export default function QuestionBank() {
       return "This is a Multiple Select Question (MSQ) which may have one or more correct options. Note that there is no partial marking!";
     }
     return "MCQ questions have negative marking (-1/3). Eliminate obviously incorrect options to improve your accuracy, or use Skip if unsure.";
-  }, [activeQ]);
+}, [activeQ]);
+
+  if (isError) return (
+    <Layout title="Question Bank">
+      <QueryError onRetry={refetchQuestions} />
+    </Layout>
+  );
 
   return (
     <Layout title="Question Bank">

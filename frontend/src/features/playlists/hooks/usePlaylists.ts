@@ -59,6 +59,7 @@ export function useSaveVideoProgress(playlistId: string | undefined) {
       playlistsApi.saveProgress(videoId, payload),
     onSuccess: () => {
       if (playlistId) queryClient.invalidateQueries({ queryKey: queryKeys.playlists.detail(playlistId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.playlists.all() });
     },
   });
 }

@@ -2,11 +2,18 @@ import React from "react";
 import { Link, useParams } from "react-router-dom";
 import { BookCheck, History, FileText, AlertOctagon } from "lucide-react";
 import Layout from "@/components/Layout";
+import QueryError from "@/components/common/QueryError";
 import { useTopicAnalytics } from "@/features/dashboard/hooks/useDashboard";
 
 export default function TopicDetail() {
   const { id } = useParams();
-  const { data } = useTopicAnalytics(id);
+  const { data, isError, refetch } = useTopicAnalytics(id);
+
+  if (isError) return (
+    <Layout title="Topic Detail">
+      <QueryError onRetry={refetch} />
+    </Layout>
+  );
 
   if (!data) return (
     <Layout title="Topic Detail">

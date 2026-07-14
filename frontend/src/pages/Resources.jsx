@@ -18,6 +18,7 @@ import { toast } from "sonner";
 import { Link } from "react-router-dom";
 import PdfCanvasViewer from "@/components/PdfCanvasViewer";
 import Layout from "@/components/Layout";
+import QueryError from "@/components/common/QueryError";
 import AppSelect from "@/components/common/AppSelect";
 
 const TYPES = ["Books", "Notes", "Question Banks", "PYQ Collections", "Formula Sheets", "Reference Material"];
@@ -33,7 +34,7 @@ function formatSize(bytes) {
 export default function Resources() {
   const { data: subjects = [] } = useSubjects();
   const [filter, setFilter] = useState({ subject_id: "", resource_type: "" });
-  const { data: items = [] } = useResources(filter);
+  const { data: items = [], isError, refetch } = useResources(filter);
   const { data: driveStatus } = useDriveStatus();
   const syncDrive = useSyncDrive();
   const refreshDrive = useRefreshDrive();
@@ -287,7 +288,13 @@ export default function Resources() {
     } catch {
       toast.error("Couldn't save label");
     }
-  };
+};
+
+  if (isError) return (
+    <Layout title="Resources">
+      <QueryError onRetry={refetch} />
+    </Layout>
+  );
 
   return (
     <Layout title={viewer ? viewer.title : "Resources"} hideSidebar={!!viewer}>

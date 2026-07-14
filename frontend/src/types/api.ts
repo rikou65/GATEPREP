@@ -1,7 +1,12 @@
+export type ApiErrorPayload = {
+  code: string;
+  message: string;
+};
+
 export type ApiEnvelope<T> = {
   success?: boolean;
   data: T;
-  error?: string;
+  error?: ApiErrorPayload | string;
   message?: string;
 };
 

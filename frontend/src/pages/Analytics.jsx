@@ -10,6 +10,7 @@ import {
   ArrowUpRight, ChevronDown, ChevronUp, BarChart3
 } from "lucide-react";
 import Layout from "@/components/Layout";
+import QueryError from "@/components/common/QueryError";
 import { useDashboard, useSubjectAnalyticsLoader } from "@/features/dashboard/hooks/useDashboard";
 
 /* ─── colour palette ─── */
@@ -219,7 +220,7 @@ const MiniStat = ({ label, value, sub, tone }) => (
 export default function Analytics() {
   const [topicDataCache, setTopicDataCache] = useState({});
   const [expandedSubjects, setExpandedSubjects] = useState(new Set());
-  const { data } = useDashboard();
+  const { data, isError, refetch } = useDashboard();
   const loadSubjectAnalytics = useSubjectAnalyticsLoader();
 
   const toggleSubject = async (sid) => {
@@ -236,6 +237,12 @@ export default function Analytics() {
       } catch { /* silent */ }
     }
   };
+
+  if (isError) return (
+    <Layout title="Analytics">
+      <QueryError onRetry={refetch} />
+    </Layout>
+  );
 
   if (!data) return (
     <Layout title="Analytics">

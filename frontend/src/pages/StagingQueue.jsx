@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { CheckCircle2, AlertOctagon, Loader2, RefreshCw, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import Layout from "@/components/Layout";
+import QueryError from "@/components/common/QueryError";
 import { formatMathText, renderContentWithTables } from "@/lib/mathFormat";
 import {
   useApproveReadyStaging,
@@ -17,7 +18,7 @@ import {
 
 
 export default function StagingQueue() {
-  const { data: items = [], isLoading: loading, refetch: refetchItems } = useStagingItems();
+  const { data: items = [], isLoading: loading, refetch: refetchItems, isError } = useStagingItems();
   const { data: jobs = [] } = useImportJobs();
   const approveReady = useApproveReadyStaging();
   const approveItem = useApproveStagingItem();
@@ -30,11 +31,17 @@ export default function StagingQueue() {
   const activeJobs = jobs.filter(j => j.status === "PROCESSING");
   const failedJobs = jobs.filter(j => j.status === "FAILED");
 
-  useEffect(() => {
+useEffect(() => {
     if (activeJobs.length > 0) {
       refetchItems();
     }
   }, [activeJobs.length, refetchItems]);
+
+  if (isError) return (
+    <Layout title="OCR Staging Queue">
+      <QueryError onRetry={refetchItems} />
+    </Layout>
+  );
 
   const handleBulkApprove = async () => {
     try {

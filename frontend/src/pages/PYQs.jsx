@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Plus, History } from "lucide-react";
 import Layout from "@/components/Layout";
+import QueryError from "@/components/common/QueryError";
 import { usePyqs } from "@/features/practice/hooks/usePractice";
 import { useSubjects, useTopics } from "@/features/subjects/hooks/useSubjects";
 
@@ -20,7 +21,7 @@ export default function PYQs() {
 
   const { data: subjects = [] } = useSubjects();
   const { data: topics = [] } = useTopics(filter.subject_id);
-  const { data: pyqData, refetch: refetchPyqs } = usePyqs(filter);
+  const { data: pyqData, refetch: refetchPyqs, isError } = usePyqs(filter);
   const items = pyqData?.items || [];
   const total = pyqData?.total || 0;
 
@@ -38,6 +39,12 @@ export default function PYQs() {
     items.forEach(it => { m[it.pyq_id] = it.flags || []; });
     return m;
   }, [items]);
+
+  if (isError) return (
+    <Layout title="PYQs">
+      <QueryError onRetry={refetchPyqs} />
+    </Layout>
+  );
 
   return (
     <Layout title="PYQs">

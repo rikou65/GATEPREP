@@ -2,13 +2,20 @@ import React from "react";
 import { Link, useParams } from "react-router-dom";
 import { BookCheck, History, FileText, Sparkles, ArrowUpRight } from "lucide-react";
 import Layout from "@/components/Layout";
+import QueryError from "@/components/common/QueryError";
 import { useSubject } from "@/features/subjects/hooks/useSubjects";
 import { useSubjectAnalytics } from "@/features/dashboard/hooks/useDashboard";
 
 export default function SubjectDetail() {
   const { id } = useParams();
-  const { data: subject } = useSubject(id);
+  const { data: subject, isError, refetch } = useSubject(id);
   const { data: rows = [] } = useSubjectAnalytics(id);
+
+  if (isError) return (
+    <Layout title="Subject Detail">
+      <QueryError onRetry={refetch} />
+    </Layout>
+  );
 
   if (!subject) return (
     <Layout title="Subject Detail">

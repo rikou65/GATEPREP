@@ -2,10 +2,16 @@ import React from "react";
 import { Link } from "react-router-dom";
 import { ChevronRight } from "lucide-react";
 import Layout from "@/components/Layout";
+import QueryError from "@/components/common/QueryError";
 import { useSubjects } from "@/features/subjects/hooks/useSubjects";
 
 export default function Subjects() {
-  const { data: subjects = [] } = useSubjects();
+  const { data: subjects = [], isError, refetch } = useSubjects();
+  if (isError) return (
+    <Layout title="Subjects">
+      <QueryError onRetry={refetch} />
+    </Layout>
+  );
   return (
     <Layout title="Subjects">
       <div className="space-y-8">

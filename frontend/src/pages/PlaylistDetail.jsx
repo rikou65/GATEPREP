@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { CheckCircle2, Circle, ArrowLeft, ChevronRight, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 import Layout from "@/components/Layout";
+import QueryError from "@/components/common/QueryError";
 import {
   usePlaylist,
   useSaveVideoNotes,
@@ -54,7 +55,7 @@ export default function PlaylistDetail() {
 
   const [notes, setNotes] = useState("");
   const [lastSavedNotes, setLastSavedNotes] = useState("");
-  const { data: playlistData } = usePlaylist(id);
+  const { data: playlistData, isError, refetch } = usePlaylist(id);
   const active = playlist?.videos?.[activeIdx];
   const { data: videoNotes } = useVideoNotes(active?.video_id);
   const saveVideoNotes = useSaveVideoNotes(active?.video_id);
@@ -217,6 +218,12 @@ export default function PlaylistDetail() {
   };
 
   // Key moments and active recall memos removed per requirements
+
+  if (isError) return (
+    <Layout title="Playlist Detail">
+      <QueryError onRetry={refetch} />
+    </Layout>
+  );
 
   if (!playlist) return (
     <Layout title="Playlist Detail">

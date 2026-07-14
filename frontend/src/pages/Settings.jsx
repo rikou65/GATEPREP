@@ -23,8 +23,8 @@ export default function Settings() {
   const { user, logout } = useAuth();
   const [search, setSearch] = useSearchParams();
 
-  const { data: drive, isLoading: driveLoading } = useDriveIntegrationStatus();
-  const { data: youtube, isLoading: youtubeLoading } = useYouTubeIntegrationStatus();
+  const { data: drive, isLoading: driveLoading, isError: driveError } = useDriveIntegrationStatus();
+  const { data: youtube, isLoading: youtubeLoading, isError: youtubeError } = useYouTubeIntegrationStatus();
   const connectDriveMutation = useConnectDrive();
   const connectYouTubeMutation = useConnectYouTube();
   const disconnectDriveMutation = useDisconnectDrive();
@@ -129,6 +129,7 @@ export default function Settings() {
                 {drive?.connected && <CheckCircle2 className="w-4 h-4 text-emerald-500" />}
               </div>
               <p className="text-xs text-muted-foreground mt-1">Connect Drive to manage resources</p>
+              {driveError && <div data-testid="query-error" className="text-xs text-muted-foreground">Could not load Drive status.</div>}
             </div>
             {driveLoading ? (
               <Button variant="outline" size="sm" disabled data-testid="drive-loading-btn">
@@ -156,6 +157,7 @@ export default function Settings() {
                 {youtube?.connected && <CheckCircle2 className="w-4 h-4 text-emerald-500" />}
               </div>
               <p className="text-xs text-muted-foreground mt-1">Connect YT to import playlists</p>
+              {youtubeError && <div data-testid="query-error" className="text-xs text-muted-foreground">Could not load YouTube status.</div>}
             </div>
             {youtubeLoading ? (
               <Button variant="outline" size="sm" disabled data-testid="youtube-loading-btn">

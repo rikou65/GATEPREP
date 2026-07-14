@@ -16,7 +16,7 @@ export default function ImportPDF() {
   const [file, setFile] = useState(null);
   const [url, setUrl] = useState("");
   const navigate = useNavigate();
-  const { data: subjects = [] } = useSubjects();
+  const { data: subjects = [], isError: subjectsError } = useSubjects();
   const importPdf = useImportPdf();
 
   const handleSubmit = async (e) => {
@@ -76,7 +76,7 @@ export default function ImportPDF() {
             <div className="space-y-2">
               <label className="text-sm font-medium">1. Select Target Subject</label>
               <AppSelect
-                value={subjectId} 
+                value={subjectId}
                 onChange={setSubjectId}
                 className="w-full"
                 options={[
@@ -84,6 +84,7 @@ export default function ImportPDF() {
                   ...subjects.map((s) => ({ value: s.subject_id, label: s.name })),
                 ]}
               />
+              {subjectsError && <div data-testid="query-error" className="text-xs text-muted-foreground">Could not load subjects.</div>}
             </div>
 
             {/* 2. Source label */}

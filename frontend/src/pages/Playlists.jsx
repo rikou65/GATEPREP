@@ -13,6 +13,7 @@ import AppSelect from "@/components/common/AppSelect";
 import { ListVideo, Plus, Play, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import Layout from "@/components/Layout";
+import QueryError from "@/components/common/QueryError";
 
 function formatDuration(seconds) {
   if (!seconds) return "0m";
@@ -28,7 +29,7 @@ export default function Playlists() {
   const [form, setForm] = useState({ youtube_url: "", subject_id: "" });
   const [loading, setLoading] = useState(false);
 
-  const { data: playlists = [] } = usePlaylists();
+  const { data: playlists = [], isError, refetch } = usePlaylists();
   const { data: subjects = [] } = useSubjects();
   const importPlaylist = useImportPlaylist();
   const deletePlaylist = useDeletePlaylist();
@@ -67,6 +68,12 @@ export default function Playlists() {
       .filter(s => bySubject.has(s.subject_id))
       .map(s => ({ subject: s, items: bySubject.get(s.subject_id) }));
   }, [playlists, subjects]);
+
+  if (isError) return (
+    <Layout title="Playlists">
+      <QueryError onRetry={refetch} />
+    </Layout>
+  );
 
   return (
     <Layout title="Playlists">

@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Trash2, AlertOctagon } from "lucide-react";
 import { toast } from "sonner";
 import Layout from "@/components/Layout";
+import QueryError from "@/components/common/QueryError";
 import AppSelect from "@/components/common/AppSelect";
 import { useDeleteMistake, useMistakes } from "@/features/practice/hooks/usePractice";
 import { useSubjects } from "@/features/subjects/hooks/useSubjects";
@@ -11,8 +12,14 @@ import { useSubjects } from "@/features/subjects/hooks/useSubjects";
 export default function MistakeLab() {
   const [filter, setFilter] = useState({ subject_id: "", mistake_type: "" });
   const { data: subjects = [] } = useSubjects();
-  const { data: items = [] } = useMistakes(filter);
+  const { data: items = [], isError, refetch } = useMistakes(filter);
   const deleteMistake = useDeleteMistake();
+
+  if (isError) return (
+    <Layout title="Mistake Lab">
+      <QueryError onRetry={refetch} />
+    </Layout>
+  );
 
   const remove = async (id) => {
     try {
