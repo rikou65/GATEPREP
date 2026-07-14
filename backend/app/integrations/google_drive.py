@@ -126,9 +126,20 @@ class GoogleDriveIntegration:
         return build("drive", "v3", credentials=creds, cache_discovery=False)
 
     @staticmethod
+    def _escape_drive_query_value(value: str) -> str:
+        """Escape a string for safe embedding in a Google Drive query clause.
+
+        Drive query language uses backslash as the escape character inside
+        single-quoted string literals. Backslash must be escaped first,
+        then the single-quote delimiter.
+        """
+        return value.replace("\\", "\\\\").replace("'", "\\'")
+
+    @staticmethod
     def find_folder(service, name: str, parent_id: Optional[str]) -> Optional[str]:
+        escaped_name = GoogleDriveIntegration._escape_drive_query_value(name)
         q_parts = [
-            f"name='{name.replace(chr(39), chr(92)+chr(39))}'",
+            f"name='{escaped_name}'",
             "mimeType='application/vnd.google-apps.folder'",
             "trashed=false",
         ]
