@@ -23,6 +23,8 @@ from app.core.config import Settings
 from app.core.db import create_db_client
 from app.core.logging import logger
 from app.core.time import iso, now_utc
+from app.integrations.google_drive import GoogleDriveIntegration
+from app.integrations.google_youtube import YouTubeTokenManager
 from app.repositories.oauth_states import OAuthStateRepository
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
@@ -38,6 +40,16 @@ def create_app() -> FastAPI:
     app.state.settings = settings
     app.state.db = db
     app.state.client = client
+
+    # Integration singletons. Kept for the app lifetime so their in-process
+    # credential caches survive across requests instead of being rebuilt
+    # (and re-refreshing Google tokens) on every call.
+    app.state.drive_integration = GoogleDriveIntegration(settings)
+    app.state.youtube_token_manager = YouTubeTokenManager(
+        settings.GOOGLE_DRIVE_CLIENT_ID,
+        settings.GOOGLE_DRIVE_CLIENT_SECRET,
+        settings.GOOGLE_YOUTUBE_REDIRECT_URI,
+    )
 
     _setup_middleware(app)
     _mount_routes(app)
@@ -125,9 +137,18 @@ async def lifespan(app: FastAPI):
         _migrate_per_user_content,
         _ensure_runtime_indexes,
         _purge_global_staging_records,
+        _hash_existing_session_tokens,
+        _encrypt_existing_token_credentials,
     )
+    from app.core.security import configure_session_secret
+    from app.core.crypto import configure_token_encryption_key
 
     app_db = app.state.db
+    app_settings: Settings = app.state.settings
+    configure_session_secret(getattr(app_settings, "JWT_SECRET", "") or "")
+    configure_token_encryption_key(
+        getattr(app_settings, "TOKEN_ENCRYPTION_KEY", "") or ""
+    )
     migrations.configure(app_db)
 
     if await app_db.subjects.count_documents({}) == 0:
@@ -137,6 +158,8 @@ async def lifespan(app: FastAPI):
     await _migrate_v2_split_subjects()
     await _migrate_per_user_content()
     await _purge_global_staging_records()
+    await _hash_existing_session_tokens()
+    await _encrypt_existing_token_credentials()
 
     oauth_state_repo = OAuthStateRepository(app_db)
     await oauth_state_repo.ensure_index()

@@ -92,7 +92,6 @@ class SupabaseAuthIntegration:
                     "PS256", "PS384", "PS512",
                 ],
                 audience="authenticated",
-                options={"verify_aud": False},
             )
             return payload
         except jwt.ExpiredSignatureError:

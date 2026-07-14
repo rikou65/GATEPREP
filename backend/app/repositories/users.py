@@ -10,6 +10,10 @@ class UserRepository:
     def __init__(self, db):
         self._db = db
 
+    @property
+    def db(self):
+        return self._db
+
     async def link_supabase_identity(
         self, user_id: str, supabase_user_id: str
     ) -> None:
@@ -97,10 +101,11 @@ class UserRepository:
         )
 
     async def find_by_session_token(self, token: str) -> Optional[Dict[str, Any]]:
+        from app.core.security import hash_session_token
         from app.core.time import now_utc
 
         sess = await self._db.user_sessions.find_one(
-            {"session_token": token}, {"_id": 0}
+            {"session_token": hash_session_token(token)}, {"_id": 0}
         )
         if not sess:
             return None

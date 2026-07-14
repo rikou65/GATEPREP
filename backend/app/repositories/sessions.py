@@ -4,6 +4,7 @@ import secrets
 from datetime import timedelta
 from typing import Optional
 
+from app.core.security import hash_session_token
 from app.core.time import iso, now_utc
 
 
@@ -17,20 +18,22 @@ class SessionRepository:
         token = secrets.token_urlsafe(32)
         await self._db.user_sessions.insert_one({
             "user_id": user_id,
-            "session_token": token,
+            "session_token": hash_session_token(token),
             "expires_at": iso(now_utc() + timedelta(days=expires_in_days)),
             "created_at": iso(now_utc()),
         })
         return token
 
     async def delete_session(self, token: str) -> None:
-        await self._db.user_sessions.delete_one({"session_token": token})
+        await self._db.user_sessions.delete_one(
+            {"session_token": hash_session_token(token)}
+        )
 
     async def find_session(self, token: str) -> Optional[dict]:
         from datetime import datetime, timezone
 
         sess = await self._db.user_sessions.find_one(
-            {"session_token": token}, {"_id": 0}
+            {"session_token": hash_session_token(token)}, {"_id": 0}
         )
         if not sess:
             return None

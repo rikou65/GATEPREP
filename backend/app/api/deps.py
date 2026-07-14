@@ -1,15 +1,24 @@
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Optional
 
 from fastapi import Depends, HTTPException, Request
 
 from app.integrations.supabase_auth import SupabaseAuthIntegration
 from app.repositories.users import UserRepository
+from app.schemas.auth import CurrentUser
 from app.services.auth.supabase_service import SupabaseAuthService
 
 
-async def get_current_user(request: Request) -> Dict[str, Any]:
+async def get_current_user(request: Request) -> CurrentUser:
+    """Resolve the authenticated user from cookie or Supabase Bearer token.
+
+    Returns a typed ``CurrentUser`` so routes get attribute access and the
+    response contract can't accidentally leak ``_session_token`` or ``_id``.
+
+    Cookie path is lookup-only. Bearer path is also lookup-only —
+    auto-link/user-create happens exclusively in ``POST /auth/supabase-session``.
+    """
     db = getattr(request.app.state, "db", None)
     if db is None:
         raise HTTPException(status_code=500, detail="DB not available")
@@ -19,8 +28,7 @@ async def get_current_user(request: Request) -> Dict[str, Any]:
         user_repo = UserRepository(db)
         user = await user_repo.find_by_session_token(session_token)
         if user is not None:
-            user["_session_token"] = session_token
-            return user
+            return CurrentUser(**user)
 
     auth = request.headers.get("Authorization", "")
     if auth.startswith("Bearer "):
@@ -36,8 +44,18 @@ async def get_current_user(request: Request) -> Dict[str, Any]:
             supabase_service = SupabaseAuthService(
                 user_repo, supabase_integration
             )
-            user = await supabase_service.authenticate(supabase_token)
+            user = await supabase_service.resolve(supabase_token)
             if user is not None:
-                return user
+                return CurrentUser(**user)
 
     raise HTTPException(status_code=401, detail="Not authenticated")
+
+
+async def get_session_token(request: Request) -> Optional[str]:
+    """Extract the raw session cookie value.
+
+    Used only where the raw token is genuinely needed — logout (to delete
+    the session row) and identity-repair (to repoint the session row).
+    Never expose this token in a response body.
+    """
+    return request.cookies.get("session_token")

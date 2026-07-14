@@ -210,6 +210,92 @@ async def _purge_global_staging_records() -> None:
         logger.info(f"Purged {r1.deleted_count} staging items and {r2.deleted_count} import jobs without user_id")
 
 
+async def _hash_existing_session_tokens() -> None:
+    """One-time migration: hash any plaintext session tokens at rest.
+
+    HMAC-SHA256 hex digests are 64 hex chars. ``secrets.token_urlsafe`` tokens
+    contain ``-_`` and are ~43 chars, so a stored value that is NOT 64 hex
+    chars must be a legacy plaintext token that needs hashing.
+
+    Also collapses any duplicate rows sharing the same stored token value
+    (keeping the newest by ``_id``) so the upcoming unique index on
+    ``session_token`` can be created — random tokens never collide in
+    production, but stale test/dev data may.
+    """
+    from app.core.security import hash_session_token
+
+    hex_chars = set("0123456789abcdef")
+
+    # Dedupe first: group by the stored token value and delete all but the
+    # newest row in each duplicate group.
+    async for grp in db.user_sessions.aggregate([
+        {"$group": {
+            "_id": "$session_token",
+            "ids": {"$push": "$_id"},
+            "count": {"$sum": 1},
+        }},
+        {"$match": {"count": {"$gt": 1}}},
+    ]):
+        ids = sorted(grp["ids"], reverse=True)  # newest _id first
+        await db.user_sessions.delete_many({"_id": {"$in": ids[1:]}})
+
+    migrated = 0
+    skipped = 0
+    async for doc in db.user_sessions.find({}, {"_id": 1, "session_token": 1}):
+        tok = doc.get("session_token")
+        if not tok:
+            continue
+        if len(tok) == 64 and all(c in hex_chars for c in tok.lower()):
+            continue
+        try:
+            await db.user_sessions.update_one(
+                {"_id": doc["_id"]},
+                {"$set": {"session_token": hash_session_token(tok)}},
+            )
+            migrated += 1
+        except Exception as exc:
+            # A residual collision (e.g. two rows that dedupe missed) — drop
+            # the loser rather than let startup crash on a stale dev session.
+            await db.user_sessions.delete_one({"_id": doc["_id"]})
+            skipped += 1
+    if migrated:
+        logger.info(f"Hashed {migrated} plaintext session tokens at rest")
+    if skipped:
+        logger.warning(f"Skipped {skipped} duplicate session rows during hashing")
+
+
+async def _encrypt_existing_token_credentials() -> None:
+    """One-time migration: encrypt any plaintext OAuth tokens at rest.
+
+    Skips entirely when ``TOKEN_ENCRYPTION_KEY`` is not configured. When
+    enabled, values that fail Fernet decryption (legacy plaintext) are
+    re-encrypted; already-encrypted values are left untouched.
+    """
+    from app.core.crypto import decrypt_secret, encrypt_secret, is_encryption_enabled
+
+    if not is_encryption_enabled():
+        return
+
+    token_fields = ("access_token", "refresh_token")
+    migrated = 0
+    for coll_name in ("drive_credentials", "youtube_credentials"):
+        coll = db[coll_name]
+        async for doc in coll.find({}, {"_id": 1, **{f: 1 for f in token_fields}}):
+            updates = {}
+            for f in token_fields:
+                v = doc.get(f)
+                if not v:
+                    continue
+                decrypted = decrypt_secret(v)
+                if decrypted == v:
+                    updates[f] = encrypt_secret(v)
+            if updates:
+                await coll.update_one({"_id": doc["_id"]}, {"$set": updates})
+                migrated += 1
+    if migrated:
+        logger.info(f"Encrypted {migrated} plaintext OAuth token documents at rest")
+
+
 async def _ensure_runtime_indexes() -> None:
     try:
         await db.question_flags.create_index(
@@ -235,6 +321,29 @@ async def _ensure_runtime_indexes() -> None:
         await db.video_progress.create_index([("user_id", 1), ("last_watched_at", -1)])
         await db.video_notes.create_index([("user_id", 1), ("video_id", 1)], unique=True)
         await db.mistakes.create_index([("user_id", 1), ("subject_id", 1)])
+
+        # Auth + token hot-path indexes (every authenticated request).
+        # email / supabase_user_id are intentionally non-unique: legacy data
+        # may contain duplicates that IdentityRepairService is designed to
+        # merge; enforcing uniqueness here would reject those merges.
+        await db.users.create_index("email", sparse=True)
+        await db.users.create_index("user_id", unique=True)
+        await db.users.create_index("supabase_user_id", sparse=True)
+        await db.user_sessions.create_index("session_token", unique=True)
+        await db.oauth_states.create_index("state")
+        await db.oauth_states.create_index(
+            [("purpose", 1), ("used", 1), ("expires_at", 1)]
+        )
+        await db.drive_credentials.create_index("user_id", unique=True)
+        await db.youtube_credentials.create_index("user_id", unique=True)
+
+        # Resource/question notes hot paths (per-item reads/writes).
+        await db.question_notes.create_index(
+            [("user_id", 1), ("question_id", 1)]
+        )
+        await db.resource_notes.create_index(
+            [("resource_id", 1), ("user_id", 1)], unique=True
+        )
     except Exception as e:
         logger.warning(f"index creation: {e}")
 

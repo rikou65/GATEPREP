@@ -26,7 +26,6 @@ class Settings(BaseSettings):
     SUPABASE_URL: Optional[str] = ""
     SUPABASE_JWT_SECRET: Optional[str] = ""
     SUPABASE_JWKS_URL: Optional[str] = ""
-    SUPABASE_SERVICE_ROLE_KEY: Optional[str] = ""
 
     TOKEN_ENCRYPTION_KEY: Optional[str] = ""
 

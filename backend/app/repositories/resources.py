@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
+from app.core.crypto import decrypt_secret, encrypt_secret
 from app.core.time import iso, now_utc
+
+_TOKEN_FIELDS = ("access_token", "refresh_token")
 
 
 class ResourceRepository:
@@ -24,6 +27,12 @@ class ResourceRepository:
 
     async def create(self, doc: Dict[str, Any]) -> None:
         await self._db.resources.insert_one(dict(doc))
+
+    async def create_many(self, docs: List[Dict[str, Any]]) -> int:
+        if not docs:
+            return 0
+        await self._db.resources.insert_many([dict(d) for d in docs])
+        return len(docs)
 
     async def delete(self, resource_id: str, user_id: str) -> int:
         r = await self._db.resources.delete_one(
@@ -73,15 +82,24 @@ class DriveCredentialRepository:
         self._db = db
 
     async def find(self, user_id: str) -> Optional[Dict[str, Any]]:
-        return await self._db.drive_credentials.find_one(
+        doc = await self._db.drive_credentials.find_one(
             {"user_id": user_id}, {"_id": 0}
         )
+        if doc:
+            for f in _TOKEN_FIELDS:
+                if f in doc:
+                    doc[f] = decrypt_secret(doc[f])
+        return doc
 
     async def upsert(self, user_id: str, data: Dict[str, Any]) -> None:
+        stored = dict(data)
+        for f in _TOKEN_FIELDS:
+            if f in stored:
+                stored[f] = encrypt_secret(stored[f])
         await self._db.drive_credentials.update_one(
             {"user_id": user_id},
             {
-                "$set": data,
+                "$set": stored,
                 "$setOnInsert": {"connected_at": iso(now_utc())},
             },
             upsert=True,
@@ -97,7 +115,7 @@ class DriveCredentialRepository:
             {"user_id": user_id},
             {
                 "$set": {
-                    "access_token": access_token,
+                    "access_token": encrypt_secret(access_token),
                     "expiry": expiry,
                     "updated_at": iso(now_utc()),
                 }

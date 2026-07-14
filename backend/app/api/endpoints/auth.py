@@ -2,75 +2,55 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Request, Response
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, get_session_token
+from app.api.providers import (
+    get_google_oauth_integration,
+    get_session_repo,
+    get_session_service,
+    get_settings,
+    get_oauth_state_service,
+    get_identity_repair_service,
+    get_supabase_auth_service,
+)
 from app.api.responses import err, ok
-from app.core.config import Settings
-from app.integrations.google_oauth import GoogleOAuthIntegration
-from app.integrations.supabase_auth import SupabaseAuthIntegration
-from app.repositories.oauth_states import OAuthStateRepository
-from app.repositories.sessions import SessionRepository
-from app.repositories.users import UserRepository
-from app.services.auth.oauth_state_service import OAuthStateService
+from app.schemas.auth import (
+    AuthSessionOut,
+    CurrentUser,
+    GoogleSessionIn,
+    MeOut,
+    SupabaseSessionIn,
+)
+from app.schemas.common import Envelope, GoogleUrlOut, LoggedOut
 from app.services.auth.identity_repair_service import IdentityRepairService
+from app.services.auth.oauth_state_service import OAuthStateService
 from app.services.auth.session_service import SessionService
 from app.services.auth.supabase_service import SupabaseAuthService
-from app.services.auth.user_service import UserService
 
 router = APIRouter()
 
 
-def _get_db(request: Request):
-    return request.app.state.db
-
-
-def _get_settings(request: Request) -> Settings:
-    return request.app.state.settings
-
-
-def _build_session_service(db, settings: Settings):
-    user_repo = UserRepository(db)
-    session_repo = SessionRepository(db)
-    oauth_state_repo = OAuthStateRepository(db)
-    oauth_state_service = OAuthStateService(oauth_state_repo)
-    user_service = UserService(user_repo, session_repo)
-    return SessionService(session_repo, oauth_state_service, user_service)
-
-
-def _build_google_oauth(settings: Settings) -> GoogleOAuthIntegration:
-    return GoogleOAuthIntegration(
-        settings.GOOGLE_DRIVE_CLIENT_ID,
-        settings.GOOGLE_DRIVE_CLIENT_SECRET,
-        settings.GOOGLE_LOGIN_REDIRECT_URI,
-    )
-
-
-def _build_oauth_state_service(db) -> OAuthStateService:
-    return OAuthStateService(OAuthStateRepository(db))
-
-
-@router.get("/auth/google-url")
-async def google_auth_url(request: Request):
-    settings = _get_settings(request)
-    google_oauth = _build_google_oauth(settings)
+@router.get("/auth/google-url", response_model=Envelope[GoogleUrlOut])
+async def google_auth_url(
+    google_oauth=Depends(get_google_oauth_integration),
+    oauth_state_service: OAuthStateService = Depends(get_oauth_state_service),
+):
     if not google_oauth.client_id:
         return err("config", "Google login not configured", 500)
-    oauth_state_service = _build_oauth_state_service(_get_db(request))
+
     state = await oauth_state_service.generate("", "login")
     return ok({"authorization_url": google_oauth.build_login_url(state)})
 
 
-@router.post("/auth/session")
-async def auth_session(request: Request, response: Response):
-    settings = _get_settings(request)
-    db = _get_db(request)
-    session_service = _build_session_service(db, settings)
-    google_oauth = _build_google_oauth(settings)
-
-    body = await request.json()
-    code = body.get("code")
-    state = body.get("state", "")
-    if not code:
-        return err("missing_code", "Authorization code required", 400)
+@router.post("/auth/session", response_model=Envelope[AuthSessionOut])
+async def auth_session(
+    body: GoogleSessionIn,
+    response: Response,
+    settings=Depends(get_settings),
+    google_oauth=Depends(get_google_oauth_integration),
+    session_service: SessionService = Depends(get_session_service),
+):
+    code = body.code
+    state = body.state
     if not state:
         return err("missing_state", "OAuth state required", 400)
 
@@ -90,12 +70,12 @@ async def auth_session(request: Request, response: Response):
     return ok({"user": result["user"]})
 
 
-@router.post("/auth/dev-login")
-async def dev_login(request: Request, response: Response):
-    settings = _get_settings(request)
-    db = _get_db(request)
-    session_service = _build_session_service(db, settings)
-
+@router.post("/auth/dev-login", response_model=Envelope[AuthSessionOut])
+async def dev_login(
+    response: Response,
+    settings=Depends(get_settings),
+    session_service: SessionService = Depends(get_session_service),
+):
     if settings.ENVIRONMENT != "development":
         return err("disabled", "Dev login is only available in development", 403)
 
@@ -110,41 +90,25 @@ async def dev_login(request: Request, response: Response):
     return ok({"session_token": result["session_token"], "user": result["user"]})
 
 
-@router.post("/auth/supabase-session")
-async def supabase_session(request: Request, response: Response):
-    """Exchange a Supabase access token for a FastAPI session.
-
-    Frontend sends the Supabase JWT, backend verifies it, maps to internal
-    user_id, and sets a session cookie. Falls back to legacy auth if
-    Supabase is not configured.
-    """
-    settings = _get_settings(request)
-    db = _get_db(request)
-
-    supabase_integration = SupabaseAuthIntegration(
-        supabase_url=getattr(settings, "SUPABASE_URL", ""),
-        jwt_secret=getattr(settings, "SUPABASE_JWT_SECRET", ""),
-        jwks_url=getattr(settings, "SUPABASE_JWKS_URL", ""),
-    )
-    if not supabase_integration.enabled:
+@router.post("/auth/supabase-session", response_model=Envelope[AuthSessionOut])
+async def supabase_session(
+    body: SupabaseSessionIn,
+    response: Response,
+    settings=Depends(get_settings),
+    session_repo=Depends(get_session_repo),
+    supabase_service: SupabaseAuthService = Depends(get_supabase_auth_service),
+):
+    if not supabase_service.enabled:
         return err(
             "not_configured",
             "Supabase authentication is not configured",
             501,
         )
 
-    body = await request.json()
-    access_token = body.get("access_token")
-    if not access_token:
-        return err("missing_token", "Supabase access token required", 400)
-
-    user_repo = UserRepository(db)
-    supabase_service = SupabaseAuthService(user_repo, supabase_integration)
-    user = await supabase_service.authenticate(access_token)
+    user = await supabase_service.authenticate(body.access_token)
     if user is None:
         return err("auth_failed", "Invalid Supabase session", 401)
 
-    session_repo = SessionRepository(db)
     session_token = await session_repo.create_session(user["user_id"])
     response.set_cookie(
         key="session_token",
@@ -158,38 +122,38 @@ async def supabase_session(request: Request, response: Response):
     return ok({"session_token": session_token, "user": user})
 
 
-@router.get("/auth/me")
-async def auth_me(user=Depends(get_current_user)):
-    return ok({
-        "user": {
-            k: v for k, v in user.items() if k not in {"_id", "_session_token"}
-        }
-    })
+@router.get("/auth/me", response_model=Envelope[MeOut])
+async def auth_me(user: CurrentUser = Depends(get_current_user)):
+    return ok({"user": user})
 
 
-@router.get("/auth/identity-audit")
-async def identity_audit(request: Request, user=Depends(get_current_user)):
-    service = IdentityRepairService(_get_db(request))
+@router.get("/auth/identity-audit", response_model=Envelope[dict])
+async def identity_audit(
+    user: CurrentUser = Depends(get_current_user),
+    service: IdentityRepairService = Depends(get_identity_repair_service),
+):
     return ok(await service.audit(user))
 
 
-@router.post("/auth/repair-identity")
-async def repair_identity(request: Request, user=Depends(get_current_user)):
-    service = IdentityRepairService(_get_db(request))
-    result = await service.repair(user)
+@router.post("/auth/repair-identity", response_model=Envelope[dict])
+async def repair_identity(
+    user: CurrentUser = Depends(get_current_user),
+    session_token: str = Depends(get_session_token),
+    service: IdentityRepairService = Depends(get_identity_repair_service),
+):
+    result = await service.repair(user, session_token)
     public_user = result.get("user") or {}
-    result["user"] = {
-        k: v for k, v in public_user.items() if k not in {"_id", "_session_token"}
-    }
+    result["user"] = public_user
     return ok(result)
 
 
-@router.post("/auth/logout")
-async def auth_logout(request: Request, response: Response):
-    token = request.cookies.get("session_token")
+@router.post("/auth/logout", response_model=Envelope[LoggedOut])
+async def auth_logout(
+    response: Response,
+    token: str = Depends(get_session_token),
+    session_repo=Depends(get_session_repo),
+):
     if token:
-        db = _get_db(request)
-        session_repo = SessionRepository(db)
         await session_repo.delete_session(token)
     response.delete_cookie("session_token", path="/")
     return ok({"logged_out": True})

@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
+from app.core.config import Settings
 from app.integrations.supabase_auth import SupabaseAuthIntegration
+from app.repositories.migration import MigrationRepository
 from app.repositories.users import UserRepository
 from app.services.auth.identity_repair_service import IdentityRepairService
 
@@ -24,9 +26,36 @@ class SupabaseAuthService:
         self._user_repo = user_repo
         self._supabase = supabase_integration
 
+    @property
+    def enabled(self) -> bool:
+        return self._supabase.enabled
+
+    async def resolve(self, token: str) -> Optional[Dict[str, Any]]:
+        """Verify a Supabase JWT and return the EXISTING internal user.
+
+        Lookup-only — does NOT auto-link or create users. Used by
+        ``get_current_user`` on every authenticated request so that read
+        endpoints never mutate the ``users`` collection as a side effect.
+        Auto-link/create happens only in ``authenticate``, which is called
+        from the explicit ``POST /auth/supabase-session`` flow.
+        Returns None if Supabase is not configured, the token is invalid,
+        or no mapped internal user exists yet.
+        """
+        if not self._supabase.enabled:
+            return None
+
+        payload = await self._supabase.verify_token(token)
+        if payload is None:
+            return None
+
+        supabase_info = self._supabase.extract_user_info(payload)
+        supabase_user_id = supabase_info["supabase_user_id"]
+        return await self._user_repo.find_by_supabase_id(supabase_user_id)
+
     async def authenticate(self, token: str) -> Optional[Dict[str, Any]]:
         """Verify a Supabase JWT and return the internal user.
 
+        Used by ``POST /auth/supabase-session`` to mint a backend session.
         If the user does not yet have a mapping, attempts to auto-link
         by verified email. Returns None if Supabase is not configured or
         the token is invalid.
@@ -48,7 +77,7 @@ class SupabaseAuthService:
         )
         if existing:
             if email_verified:
-                repair_service = IdentityRepairService(self._user_repo._db)
+                repair_service = IdentityRepairService(self._user_repo.db)
                 audit = await repair_service.audit(existing)
                 if not audit.get("current_is_canonical"):
                     result = await repair_service.repair(existing)
