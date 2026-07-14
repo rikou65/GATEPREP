@@ -133,3 +133,16 @@ The OCR pipeline is governed by:
 - [ARCHITECTURE.md](./ARCHITECTURE.md) for system boundaries
 
 If OCR behavior changes, update this file and the roadmap together.
+
+## Architecture Notes
+
+- Staging approval business logic lives in `backend/app/services/staging.py`
+  (`StagingService`). The `/api/data/staging/approve-specific` and
+  `/api/data/staging/bulk-approve` endpoints are thin handlers that delegate to
+  it; import-job listing/dismissal and staging list/delete/clear operations also
+  go through this service. Ownership is checked inside the service (every read
+  is scoped by `user_id`).
+- The Mistral ingestion (`scripts/mistral_ocr.py`) batches DB reads and writes
+  per chunk using a single `find` for existing `extracted_id`s plus one
+  `bulk_write` for inserts/updates, and stamps every `staging_questions` and
+  `topic_concepts` document with `user_id` for tenant isolation.

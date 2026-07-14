@@ -40,6 +40,7 @@ app/
   main.py            — FastAPI factory (new entry point)
   api/
     deps.py          — get_current_user (dual-auth: legacy cookie or Supabase JWT)
+    providers.py     — Depends-wired service/repository/integration providers
     responses.py     — ok(), err() helpers
     endpoints/       — auth, subjects, practice, analytics, playlists, resources, youtube, staging
   core/              — config, db, time, ids, security, constants, logging
@@ -48,12 +49,12 @@ app/
   repositories/      — MongoDB access only
   integrations/      — external API clients (google_oauth, supabase_auth, google_drive, google_youtube)
   bootstrap/         — startup seed/migration code; allowed to use Mongo directly
-  tasks/             — background workers (placeholder)
 ```
 
 ## Refactor Direction
 
 - Keep `/api` as the canonical backend prefix.
+- Keep endpoints transport-only: providers wire dependencies, services orchestrate behavior, repositories own MongoDB access.
 - Keep user-owned collections explicitly scoped by `user_id`.
 - Keep raw Axios calls inside `frontend/src/api/endpoints/*`.
 - Migrate remaining large UI orchestration to feature hooks only when it reduces complexity.

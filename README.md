@@ -144,6 +144,7 @@ Current local reality:
 │   │   ├── main.py
 │   │   ├── api/
 │   │   │   ├── deps.py
+│   │   │   ├── providers.py
 │   │   │   ├── responses.py
 │   │   │   └── endpoints/       (auth, subjects, practice, analytics,
 │   │   │                         playlists, resources, youtube, staging)
@@ -152,8 +153,7 @@ Current local reality:
 │   │   ├── services/            (business logic)
 │   │   ├── repositories/        (MongoDB access)
 │   │   ├── integrations/        (google_oauth, supabase_auth, google_drive, google_youtube)
-│   │   ├── bootstrap/           (seed data and migration startup)
-│   │   └── tasks/               (background workers placeholder)
+│   │   └── bootstrap/           (seed data and migration startup)
 │   ├── tests/
 │   ├── scripts/
 │   ├── requirements.txt

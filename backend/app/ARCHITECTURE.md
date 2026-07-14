@@ -15,6 +15,8 @@ core       -> no domain imports
 ## Hard Bans
 
 - No `db.collection` calls in routes or services
+- No endpoint imports from `app.repositories.*` or `app.integrations.*`
+- No endpoint access to `request.app.state.db`
 - No business rules in repositories
 - No route-local schemas unless temporary during migration
 - No user-owned query without `user_id`
@@ -37,6 +39,7 @@ app/
   main.py
   api/
     deps.py          — get_current_user, rate limiter
+    providers.py     — Depends-wired service/repo providers
     responses.py     — ok(), err()
     endpoints/       — one per domain
   core/
@@ -52,7 +55,6 @@ app/
   repositories/      — MongoDB access only
   integrations/      — external API clients
   bootstrap/         — startup seed data and migrations
-  tasks/             — background workers
 ```
 
 ## Frontend Data Rule

@@ -100,6 +100,7 @@ maintainability, and then scale.
   - validate input
   - call services
   - return responses
+- [x] Add `app/api/providers.py` as the single Depends-wired provider layer for repositories, services, and integrations
 - [x] Move business rules into services:
   - latest-attempt accuracy
   - ownership checks
@@ -110,6 +111,7 @@ maintainability, and then scale.
   - OCR job/staging lifecycle
   - question/PYQ approval flow
 - [x] Move all Mongo access into repositories with mandatory `user_id` filtering for user-owned collections
+- [x] Move Mongo aggregation pipeline builders for Question Bank/PYQs out of services into repository query helpers
 - [x] Add playlist repository helpers for:
   - ownership-checked playlist/video lookups
   - latest watched or in-progress video resolution
@@ -196,6 +198,7 @@ maintainability, and then scale.
   - frontend raw API calls stay in endpoint modules
   - frontend endpoint modules are consumed through feature hooks
   - backend runtime layers do not use direct Mongo collection access
+  - backend endpoints do not import repositories/integrations or access `request.app.state.db`
   - docs do not mention deleted backend entrypoints
 
 ---

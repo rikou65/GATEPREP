@@ -23,8 +23,8 @@ YouTube access. They may lack the correct scopes or refresh tokens.
 
 ### 3.1 FastAPI Dependency: `get_current_user`
 
-Resolves any authenticated request to an internal `user_id` without exposing
-auth provider details to routes.
+Resolves any authenticated request to a typed ``CurrentUser`` model without exposing
+auth provider details or session tokens to routes.
 
 Accepted credentials:
 - Legacy session cookie (temporary, during transition)
@@ -36,9 +36,17 @@ Returns:
 CurrentUser(
     user_id="internal-uuid",
     email="user@example.com",
-    auth_provider="supabase"
+    auth_provider="supabase",
+    supabase_user_id="...",
+    name="...",
+    picture="...",
+    email_verified=True,
 )
 ```
+
+The model carries identity fields only — never ``_session_token`` or ``_id``.
+Where the raw session cookie is genuinely needed (logout, identity-repair),
+use the separate ``get_session_token`` dependency.
 
 ### 3.2 User Document in MongoDB
 
@@ -304,17 +312,20 @@ ENVIRONMENT=development
 
 - [ ] Legacy session cookie still authenticates
 - [x] Supabase JWT authenticates
+- [x] Supabase JWT audience (`authenticated`) verified on JWKS and symmetric paths
+- [x] `get_current_user` is read-only on the Bearer path (no auto-link side effect)
+- [x] Session tokens hashed at rest (HMAC-SHA256 keyed by `JWT_SECRET`)
 - [x] Drive `/connect-url` works with Supabase token
 - [x] Drive callback resolves user from state, not JWT
-- [ ] Drive refresh token is encrypted
+- [x] Drive refresh token is encrypted at rest (Fernet, `TOKEN_ENCRYPTION_KEY`)
 - [x] YouTube `/connect-url` works with Supabase token
 - [x] YouTube callback resolves user from state, not JWT
-- [ ] YouTube refresh token is encrypted
+- [x] YouTube refresh token is encrypted at rest (Fernet, `TOKEN_ENCRYPTION_KEY`)
 - [x] Supabase email/password user can connect Drive/YouTube
 - [x] Supabase Google provider user can connect Drive/YouTube
 - [x] Legacy user auto-linked by verified email keeps same `user_id` and tokens
-- [ ] Unverified Supabase email does not auto-link
-- [ ] Disconnect removes only current user's token document
+- [x] Unverified Supabase email does not auto-link (auto-link is gate by `email_verified` and only runs in `POST /auth/supabase-session`)
+- [x] Disconnect removes only current user's token document
 - [x] Resource streaming still works
 - [x] YouTube playlist import still works
 - [ ] Dev-login only works in development

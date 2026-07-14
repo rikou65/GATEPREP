@@ -48,8 +48,9 @@ node_modules/.bin/vite.cmd --host 127.0.0.1 --port 3000 --strictPort
 - Use `VITE_*` frontend env variables
 - Do not reintroduce legacy `/api/admin/*` staging routes
 - Keep Question Bank and PYQs separate
-- Keep route handlers thin when feasible
+- Keep route handlers transport-only: validate input, call services, return responses
 - Endpoints → services → repositories → MongoDB (no `db.xxx` outside repositories; bootstrap seed/migration code is the only exception)
+- Endpoint files must not import repositories or integrations directly; use `app/api/providers.py`
 - Auth provider details stay behind auth services/integrations (routes never know auth type)
 
 ## Frontend Conventions
