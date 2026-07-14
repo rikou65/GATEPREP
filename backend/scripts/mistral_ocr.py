@@ -87,12 +87,13 @@ class CombinedPassResponse(BaseModel):
 # =====================================================================
 
 class MistralOCRPipeline:
-    def __init__(self, pdf_path: str, subject_id: str, job_id: Optional[str] = None, source: str = ""):
+    def __init__(self, pdf_path: str, subject_id: str, job_id: Optional[str] = None, source: str = "", user_id: Optional[str] = None):
         self.pdf_path = pdf_path
         self.subject_id = subject_id
         self.job_id = job_id
         self.source = source
-        
+        self.user_id = user_id
+
         api_key = MISTRAL_API_KEY
         if not api_key:
             raise ValueError("MISTRAL_API_KEY is missing from environment / .env")
@@ -246,7 +247,14 @@ class MistralOCRPipeline:
             pdf.close()
 
     async def _stitch_and_save(self, questions: List[ExtractedQuestion], solutions: List[ExtractedSolution], concepts: List[ExtractedConcept]):
-        """Incremental relational merge and upsert into staging database."""
+        """Incremental relational merge and upsert into staging database.
+
+        Batched: fetches all existing staging rows for the chunk's extracted
+        IDs in a single query, then issues one ``bulk_write`` for inserts and
+        one for updates — instead of a ``find_one`` + ``insert_one``/``update_one``
+        round-trip per item.
+        """
+        from pymongo import InsertOne, UpdateOne
 
         def normalize_id(raw_id: str) -> str:
             """Normalize Q.1, Q1, q.1, 1 → '1'; Q.29 → '29'; keeps alphanumeric only."""
@@ -255,32 +263,47 @@ class MistralOCRPipeline:
             clean = re.sub(r'^[Qq][.\s]*', '', str(raw_id).strip())
             return clean.strip() or raw_id.strip()
 
+        uid = self.user_id or None
+
         if concepts:
-            for c in concepts:
-                doc = {
+            concept_docs = [
+                {
                     "concept_id": new_id("con"),
+                    "user_id": uid,
                     "subject_id": self.subject_id,
                     "title": c.title,
                     "content_markdown": c.content_markdown,
-                    "created_at": iso(now_utc())
+                    "created_at": iso(now_utc()),
                 }
-                await db.topic_concepts.insert_one(doc)
-            
+                for c in concepts
+            ]
+            if concept_docs:
+                await db.topic_concepts.insert_many(concept_docs)
+
         if questions:
-            for q in questions:
-                norm_id = normalize_id(q.extracted_id)
-                existing = await db.staging_questions.find_one({"subject_id": self.subject_id, "extracted_id": norm_id})
+            q_norm = [normalize_id(q.extracted_id) for q in questions]
+            existing_map: Dict[str, Any] = {}
+            if q_norm:
+                existing_rows = await db.staging_questions.find(
+                    {"subject_id": self.subject_id, "extracted_id": {"$in": q_norm}},
+                    {"_id": 1, "extracted_id": 1, "question_text": 1,
+                     "correct_answer": 1, "solution_text": 1, "question_type": 1},
+                ).to_list(len(q_norm))
+                existing_map = {r["extracted_id"]: r for r in existing_rows}
+
+            inserts = []
+            updates = []
+            for q, norm_id in zip(questions, q_norm):
+                existing = existing_map.get(norm_id)
                 if existing:
                     status = "READY" if (existing.get("correct_answer") or existing.get("solution_text")) else "ORPHANED_QUESTION"
-                    
-                    # PROTECT EXISTING QUESTIONS: If the database already has question_text, 
-                    # do not overwrite it. This prevents hallucinated questions from the 
-                    # solutions section from overwriting the real question text.
-                    update_data = {
+                    # PROTECT EXISTING QUESTIONS: do not overwrite question_text
+                    # if it already has substantive content, so hallucinated
+                    # questions from the solutions section can't clobber it.
+                    update_data: Dict[str, Any] = {
                         "status": status,
-                        "updated_at": iso(now_utc())
+                        "updated_at": iso(now_utc()),
                     }
-                    
                     if not existing.get("question_text") or len(existing.get("question_text", "")) < 10:
                         update_data.update({
                             "question_text": q.question_text,
@@ -292,14 +315,13 @@ class MistralOCRPipeline:
                             "gate_set": q.gate_set,
                             "gate_qnum": q.gate_qnum,
                         })
-
-                    await db.staging_questions.update_one(
-                        {"_id": existing["_id"]},
-                        {"$set": update_data}
-                    )
+                    updates.append(UpdateOne(
+                        {"_id": existing["_id"]}, {"$set": update_data}
+                    ))
                 else:
-                    doc = {
+                    inserts.append(InsertOne({
                         "staging_id": new_id("stg"),
+                        "user_id": uid,
                         "subject_id": self.subject_id,
                         "extracted_id": norm_id,
                         "question_text": q.question_text,
@@ -315,34 +337,49 @@ class MistralOCRPipeline:
                         "source": self.source,
                         "status": "ORPHANED_QUESTION",
                         "created_at": iso(now_utc()),
-                        "updated_at": iso(now_utc())
-                    }
-                    await db.staging_questions.insert_one(doc)
-                    
+                        "updated_at": iso(now_utc()),
+                    }))
+            if inserts or updates:
+                await db.staging_questions.bulk_write(inserts + updates)
+
         if solutions:
-            for sol in solutions:
-                norm_id = normalize_id(sol.target_id)
-                existing = await db.staging_questions.find_one({"subject_id": self.subject_id, "extracted_id": norm_id})
+            s_norm = [normalize_id(sol.target_id) for sol in solutions]
+            existing_map = {}
+            if s_norm:
+                existing_rows = await db.staging_questions.find(
+                    {"subject_id": self.subject_id, "extracted_id": {"$in": s_norm}},
+                    {"_id": 1, "extracted_id": 1, "question_text": 1, "question_type": 1},
+                ).to_list(len(s_norm))
+                existing_map = {r["extracted_id"]: r for r in existing_rows}
+
+            ans_map = {"A": "0", "B": "1", "C": "2", "D": "3", "a": "0", "b": "1", "c": "2", "d": "3"}
+            inserts = []
+            updates = []
+            for sol, norm_id in zip(solutions, s_norm):
+                existing = existing_map.get(norm_id)
                 if existing:
                     status = "READY" if existing.get("question_text") else "ORPHANED_SOLUTION"
-                    ans_map = {"A": "0", "B": "1", "C": "2", "D": "3", "a": "0", "b": "1", "c": "2", "d": "3"}
-                    mapped_ans = ans_map.get(sol.correct_answer.strip(), sol.correct_answer.strip()) if sol.correct_answer else None
+                    mapped_ans = (
+                        ans_map.get(sol.correct_answer.strip(), sol.correct_answer.strip())
+                        if sol.correct_answer
+                        else None
+                    )
                     if existing.get("question_type") == "MSQ" and sol.correct_answer:
                         parts = [p.strip() for p in sol.correct_answer.split(",")]
                         mapped_ans = [ans_map.get(p, p) for p in parts]
-
-                    await db.staging_questions.update_one(
+                    updates.append(UpdateOne(
                         {"_id": existing["_id"]},
                         {"$set": {
                             "correct_answer": mapped_ans,
                             "solution_text": sol.solution_text,
                             "status": status,
-                            "updated_at": iso(now_utc())
-                        }}
-                    )
+                            "updated_at": iso(now_utc()),
+                        }},
+                    ))
                 else:
-                    doc = {
+                    inserts.append(InsertOne({
                         "staging_id": new_id("stg"),
+                        "user_id": uid,
                         "subject_id": self.subject_id,
                         "extracted_id": norm_id,
                         "question_text": None,
@@ -358,9 +395,10 @@ class MistralOCRPipeline:
                         "source": self.source,
                         "status": "ORPHANED_SOLUTION",
                         "created_at": iso(now_utc()),
-                        "updated_at": iso(now_utc())
-                    }
-                    await db.staging_questions.insert_one(doc)
+                        "updated_at": iso(now_utc()),
+                    }))
+            if inserts or updates:
+                await db.staging_questions.bulk_write(inserts + updates)
 
 if __name__ == "__main__":
     import argparse
