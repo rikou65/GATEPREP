@@ -3,31 +3,32 @@ from __future__ import annotations
 import os
 import tempfile
 import urllib.parse
-from typing import Any, Dict, Optional
+from typing import Optional
 
 import httpx
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Request, UploadFile
 
 from app.api.deps import get_current_user
+from app.api.providers import (
+    get_staging_service,
+)
 from app.api.responses import err, ok
 from app.core.ids import new_id
+from app.core.logging import logger
 from app.core.time import iso, now_utc
-from app.repositories.staging import (
-    ImportedQuestionRepository,
-    ImportJobRepository,
-    StagingQuestionRepository,
+from app.schemas.auth import CurrentUser
+from app.schemas.common import (
+    ApprovedOut,
+    BulkApprovedOut,
+    DeletedOut,
+    DismissedOut,
+    Envelope,
+    JobCreatedOut,
 )
+from app.schemas.staging import ApproveSpecificRequest
+from app.services.staging import StagingService
 
 router = APIRouter()
-
-
-def _repos(request: Request):
-    db = request.app.state.db
-    return (
-        ImportJobRepository(db),
-        StagingQuestionRepository(db),
-        ImportedQuestionRepository(db),
-    )
 
 
 async def run_mistral_ocr_background(
@@ -36,7 +37,7 @@ async def run_mistral_ocr_background(
     subject_id: str,
     source: str,
     user_id: str,
-    job_repo: ImportJobRepository,
+    service: StagingService,
 ):
     try:
         import sys
@@ -47,15 +48,15 @@ async def run_mistral_ocr_background(
         from scripts.mistral_ocr import MistralOCRPipeline
 
         pipeline = MistralOCRPipeline(
-            file_path, subject_id, job_id=job_id, source=source
+            file_path, subject_id, job_id=job_id, source=source, user_id=user_id,
         )
         await pipeline.process_pdf()
-        await job_repo.mark_completed(job_id, iso(now_utc()))
+        await service.mark_import_completed(job_id)
     except Exception as e:
         import logging
 
         logging.error(f"Mistral OCR pipeline failed for job {job_id}: {e}")
-        await job_repo.mark_failed(job_id, str(e))
+        await service.mark_import_failed(job_id, str(e))
     finally:
         if os.path.exists(file_path):
             try:
@@ -75,13 +76,9 @@ async def _validate_and_download_url(
         import socket
 
         host = parsed.hostname or ""
-        addr = ipaddress.ip_address(
-            socket.getaddrinfo(host, 80)[0][4][0]
-        )
+        addr = ipaddress.ip_address(socket.getaddrinfo(host, 80)[0][4][0])
         if addr.is_private or addr.is_loopback or addr.is_link_local:
-            raise ValueError(
-                "URL points to a private or local network address"
-            )
+            raise ValueError("URL points to a private or local network address")
     except ValueError as e:
         raise e
     except Exception:
@@ -108,19 +105,28 @@ async def _validate_and_download_url(
     return result, url.split("/")[-1] or "remote_file.pdf"
 
 
-@router.post("/import/pdf")
+SUPPORTED_OCR_ENGINES = {"mistral"}
+
+
+@router.post("/import/pdf", response_model=Envelope[JobCreatedOut])
 async def import_pdf(
-    request: Request,
     background_tasks: BackgroundTasks,
     subject_id: str = Form(...),
     engine: str = Form("mistral"),
     source: str = Form(""),
     file: Optional[UploadFile] = File(None),
     url: Optional[str] = Form(None),
-    user=Depends(get_current_user),
+    user: CurrentUser = Depends(get_current_user),
+    service: StagingService = Depends(get_staging_service),
 ):
     if not file and not url:
         return err("missing_input", "Must provide either a file or a URL", 400)
+    if engine not in SUPPORTED_OCR_ENGINES:
+        return err(
+            "unsupported_engine",
+            f"OCR engine '{engine}' is not supported",
+            400,
+        )
 
     job_id = new_id("job")
 
@@ -135,11 +141,7 @@ async def import_pdf(
             if ctype and not ctype.startswith("application/pdf"):
                 return err("invalid_type", "Only PDF files are accepted", 400)
             if contents[:4] != b"%PDF":
-                return err(
-                    "invalid_pdf",
-                    "File does not appear to be a valid PDF",
-                    400,
-                )
+                return err("invalid_pdf", "File does not appear to be a valid PDF", 400)
             tmp = tempfile.NamedTemporaryFile(
                 delete=False, suffix=".pdf", prefix=f"ocr_{job_id}_"
             )
@@ -147,9 +149,7 @@ async def import_pdf(
             tmp.write(contents)
             tmp.close()
             filename = (
-                os.path.basename(file.filename or "file.pdf").replace(
-                    "\x00", ""
-                )
+                os.path.basename(file.filename or "file.pdf").replace("\x00", "")
                 or "file.pdf"
             )
         elif url:
@@ -161,11 +161,11 @@ async def import_pdf(
             tmp.write(contents)
             tmp.close()
 
-        await job_repo.create({
+        await service.create_import_job({
             "job_id": job_id,
-            "user_id": user["user_id"],
+            "user_id": user.user_id,
             "filename": filename,
-            "engine": "mistral",
+            "engine": engine,
             "source": source,
             "status": "PROCESSING",
             "progress": 0,
@@ -174,7 +174,8 @@ async def import_pdf(
         })
 
     except Exception as e:
-        return err("upload_failed", str(e), 400)
+        logger.error("OCR import upload failed for job %s: %s", job_id, e, exc_info=True)
+        return err("upload_failed", "Failed to process upload", 400)
 
     background_tasks.add_task(
         run_mistral_ocr_background,
@@ -182,165 +183,75 @@ async def import_pdf(
         file_path,
         subject_id,
         source,
-        user["user_id"],
-        job_repo,
+        user.user_id,
+        service,
     )
     return ok({"job_id": job_id})
 
 
-@router.get("/import/jobs")
+@router.get("/import/jobs", response_model=Envelope[list])
 async def list_import_jobs(
-    request: Request,
-    user=Depends(get_current_user),
+    user: CurrentUser = Depends(get_current_user),
+    service: StagingService = Depends(get_staging_service),
 ):
-    job_repo, _, _ = _repos(request)
-    return ok(await job_repo.list_recent(user["user_id"]))
+    return ok(await service.list_import_jobs(user.user_id))
 
 
-@router.delete("/import/jobs/{job_id}")
+@router.delete("/import/jobs/{job_id}", response_model=Envelope[DismissedOut])
 async def dismiss_import_job(
     job_id: str,
-    request: Request,
-    user=Depends(get_current_user),
+    user: CurrentUser = Depends(get_current_user),
+    service: StagingService = Depends(get_staging_service),
 ):
-    job_repo, _, _ = _repos(request)
-    await job_repo.delete(user["user_id"], job_id)
+    await service.dismiss_import_job(user.user_id, job_id)
     return ok({"dismissed": 1})
 
 
-@router.get("/staging")
+@router.get("/staging", response_model=Envelope[list])
 async def list_staging_items(
-    request: Request,
-    user=Depends(get_current_user),
+    user: CurrentUser = Depends(get_current_user),
+    service: StagingService = Depends(get_staging_service),
 ):
-    _, staging_repo, _ = _repos(request)
-    return ok(await staging_repo.list(user["user_id"]))
+    return ok(await service.list_staging_items(user.user_id))
 
 
-@router.delete("/staging/{staging_id}")
+@router.delete("/staging/{staging_id}", response_model=Envelope[DeletedOut])
 async def discard_staging_item(
     staging_id: str,
-    request: Request,
-    user=Depends(get_current_user),
+    user: CurrentUser = Depends(get_current_user),
+    service: StagingService = Depends(get_staging_service),
 ):
-    _, staging_repo, _ = _repos(request)
-    if await staging_repo.delete(user["user_id"], staging_id) == 0:
+    if await service.discard_staging_item(user.user_id, staging_id) == 0:
         return err("not_found", "Staging item not found", 404)
     return ok({"deleted": 1})
 
 
-@router.delete("/staging")
+@router.delete("/staging", response_model=Envelope[DeletedOut])
 async def clear_all_staging(
-    request: Request,
-    user=Depends(get_current_user),
+    user: CurrentUser = Depends(get_current_user),
+    service: StagingService = Depends(get_staging_service),
 ):
-    _, staging_repo, _ = _repos(request)
-    return ok({"deleted": await staging_repo.clear_for_user(user["user_id"])})
+    return ok({"deleted": await service.clear_staging(user.user_id)})
 
 
-@router.post("/staging/approve-specific")
+@router.post("/staging/approve-specific", response_model=Envelope[ApprovedOut])
 async def approve_specific_item(
-    request: Request,
-    user=Depends(get_current_user),
+    body: ApproveSpecificRequest,
+    user: CurrentUser = Depends(get_current_user),
+    service: StagingService = Depends(get_staging_service),
 ):
-    from pydantic import BaseModel, Field
-
-    class ApproveSpecificRequest(BaseModel):
-        staging_id: str = Field(max_length=50)
-
-    body = ApproveSpecificRequest(**await request.json())
-    _, staging_repo, imported_repo = _repos(request)
-    item = await staging_repo.find(user["user_id"], body.staging_id)
-    if not item:
+    result = await service.approve_specific(user.user_id, body.staging_id)
+    if result is None:
         return err("not_found", "Staging item not found", 404)
-
-    base_doc = {
-        "user_id": user["user_id"],
-        "subject_id": item["subject_id"],
-        "topic_id": "TBD",
-        "topic": item.get("topic", ""),
-        "question_type": item.get("question_type", "MCQ"),
-        "question_text": item.get("question_text", ""),
-        "options": item.get("options", []),
-        "correct_answer": item.get("correct_answer"),
-        "solution": item.get("solution_text"),
-        "source": item.get("source", ""),
-        "tags": [item["topic"]] if item.get("topic") else [],
-        "created_at": iso(now_utc()),
-        "updated_at": iso(now_utc()),
-    }
-
-    if item.get("is_pyq"):
-        pyq_doc = {
-            **base_doc,
-            "pyq_id": new_id("pyq"),
-            "year": item.get("year", 0),
-            "gate_set": item.get("gate_set"),
-            "gate_qnum": item.get("gate_qnum"),
-        }
-        await imported_repo.create_pyq(pyq_doc)
-    else:
-        q_doc = {**base_doc, "question_id": new_id("q")}
-        await imported_repo.create_question(q_doc)
-
-    await staging_repo.delete_by_id(body.staging_id)
-    return ok({"approved": 1})
+    return ok(result)
 
 
-@router.post("/staging/bulk-approve")
+@router.post("/staging/bulk-approve", response_model=Envelope[BulkApprovedOut])
 async def bulk_approve_staging_items(
-    request: Request,
-    user=Depends(get_current_user),
+    user: CurrentUser = Depends(get_current_user),
+    service: StagingService = Depends(get_staging_service),
 ):
-    _, staging_repo, imported_repo = _repos(request)
-    ready_items = await staging_repo.list_ready(user["user_id"])
-
-    if not ready_items:
+    result = await service.bulk_approve(user.user_id)
+    if result is None:
         return err("no_items", "No ready items to approve", 400)
-
-    questions_to_insert = []
-    pyqs_to_insert = []
-    staging_ids_to_delete = []
-
-    for item in ready_items:
-        base_doc = {
-            "user_id": user["user_id"],
-            "subject_id": item["subject_id"],
-            "topic_id": "TBD",
-            "topic": item.get("topic", ""),
-            "question_type": item.get("question_type", "MCQ"),
-            "question_text": item["question_text"],
-            "options": item["options"],
-            "correct_answer": item["correct_answer"],
-            "solution": item["solution_text"],
-            "source": item.get("source", ""),
-            "tags": [item["topic"]] if item.get("topic") else [],
-            "created_at": iso(now_utc()),
-            "updated_at": iso(now_utc()),
-        }
-
-        if item.get("is_pyq"):
-            pyqs_to_insert.append({
-                **base_doc,
-                "pyq_id": new_id("pyq"),
-                "year": item.get("year", 0),
-                "gate_set": item.get("gate_set"),
-                "gate_qnum": item.get("gate_qnum"),
-            })
-        else:
-            questions_to_insert.append({
-                **base_doc,
-                "question_id": new_id("q"),
-            })
-
-        staging_ids_to_delete.append(item["staging_id"])
-
-    await imported_repo.create_questions(questions_to_insert)
-    await imported_repo.create_pyqs(pyqs_to_insert)
-    await staging_repo.delete_many_by_ids(staging_ids_to_delete)
-
-    return ok({
-        "approved": len(staging_ids_to_delete),
-        "questions_added": len(questions_to_insert),
-        "pyqs_added": len(pyqs_to_insert),
-    })
+    return ok(result)

@@ -4,6 +4,8 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
+from app.schemas.common import OutModel
+
 
 class ResourceIn(BaseModel):
     subject_id: str = Field(max_length=50)

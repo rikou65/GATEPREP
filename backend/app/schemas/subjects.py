@@ -1,17 +1,17 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
-
 from pydantic import BaseModel
 
+from app.schemas.common import OutModel
 
-class Subject(BaseModel):
+
+class Subject(OutModel):
     subject_id: str
     name: str
     order: int = 0
 
 
-class Topic(BaseModel):
+class Topic(OutModel):
     topic_id: str
     subject_id: str
     name: str

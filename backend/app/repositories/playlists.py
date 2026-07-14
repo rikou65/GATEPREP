@@ -59,6 +59,19 @@ class VideoRepository:
             {"_id": 0, "youtube_video_id": 1},
         ).to_list(2000)
 
+    async def find_zero_duration_by_playlists(
+        self, playlist_ids: List[str]
+    ) -> List[Dict[str, Any]]:
+        if not playlist_ids:
+            return []
+        return await self._db.videos.find(
+            {
+                "playlist_id": {"$in": playlist_ids},
+                "duration": {"$in": [None, 0]},
+            },
+            {"_id": 0, "playlist_id": 1, "youtube_video_id": 1},
+        ).to_list(5000)
+
     async def update_duration(self, playlist_id: str, youtube_video_id: str, duration: int) -> None:
         await self._db.videos.update_one(
             {"playlist_id": playlist_id, "youtube_video_id": youtube_video_id},

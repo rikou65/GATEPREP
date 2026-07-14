@@ -219,12 +219,21 @@ class AnalyticsService:
                 q["question_id"]
             )
 
-        notes_count: Dict[str, int] = {}
-        for tid, qids in qids_by_topic.items():
-            notes_count[tid] = await self._repo.count(
+        all_qids = [q for qids in qids_by_topic.values() for q in qids]
+        noted_qids = set()
+        if all_qids:
+            async for note in self._repo.aggregate_cursor(
                 "question_notes",
-                {"user_id": user_id, "question_id": {"$in": qids}},
-            )
+                [
+                    {"$match": {"user_id": user_id, "question_id": {"$in": all_qids}}},
+                    {"$group": {"_id": "$question_id"}},
+                ],
+            ):
+                noted_qids.add(note["_id"])
+        notes_count: Dict[str, int] = {
+            tid: sum(1 for q in qids if q in noted_qids)
+            for tid, qids in qids_by_topic.items()
+        }
 
         mistakes_count = {
             r["_id"]: r["count"]

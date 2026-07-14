@@ -4,6 +4,10 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
+from app.schemas.common import FlagsOut, OutModel
+
+VALID_FLAG_TYPES = {"review", "important"}
+
 
 class AttemptIn(BaseModel):
     selected_answer: Any
@@ -56,4 +60,17 @@ class MistakeIn(BaseModel):
     note: Optional[str] = Field(default="", max_length=5000)
 
 
-VALID_FLAG_TYPES = {"review", "important"}
+class PracticeListOut(OutModel):
+    items: List[Dict[str, Any]]
+    total: int
+
+
+class AttemptResultOut(OutModel):
+    attempt: Dict[str, Any]
+    correct_answer: Any
+    solution: Optional[str] = None
+
+
+class QuestionNotesOut(OutModel):
+    note_content: str = ""
+    question_id: str

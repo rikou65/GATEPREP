@@ -45,7 +45,11 @@ def test_frontend_endpoint_modules_are_only_used_by_feature_hooks():
 
 
 def test_backend_collection_access_stays_out_of_runtime_layers():
-    pattern = re.compile(r"\bdb\.[A-Za-z_][A-Za-z0-9_]*")
+    pattern = re.compile(
+        r"\bdb\.[A-Za-z_][A-Za-z0-9_]*"
+        r"|\b_db\["          # catches _db["collection"] and _db[var]
+        r"|self\._db\["      # catches self._db["collection"] and self._db[var]
+    )
     checked_dirs = [
         ROOT / "backend" / "app" / "api" / "endpoints",
         ROOT / "backend" / "app" / "services",
@@ -57,6 +61,25 @@ def test_backend_collection_access_stays_out_of_runtime_layers():
         for path in directory.rglob("*.py"):
             if pattern.search(_read(path)):
                 offenders.append(str(path.relative_to(ROOT)))
+
+    assert offenders == []
+
+
+def test_backend_endpoints_use_providers_not_repositories_or_integrations():
+    banned_patterns = [
+        re.compile(r"^\s*from\s+app\.repositories\b", re.MULTILINE),
+        re.compile(r"^\s*import\s+app\.repositories\b", re.MULTILINE),
+        re.compile(r"^\s*from\s+app\.integrations\b", re.MULTILINE),
+        re.compile(r"^\s*import\s+app\.integrations\b", re.MULTILINE),
+        re.compile(r"\brequest\.app\.state\.db\b"),
+        re.compile(r"\bapp\.state\.db\b"),
+    ]
+    offenders = []
+
+    for path in (ROOT / "backend" / "app" / "api" / "endpoints").rglob("*.py"):
+        text = _read(path)
+        if any(pattern.search(text) for pattern in banned_patterns):
+            offenders.append(str(path.relative_to(ROOT)))
 
     assert offenders == []
 

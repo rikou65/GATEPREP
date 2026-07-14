@@ -4,6 +4,12 @@ from typing import Any, Dict, List, Optional
 
 from app.core.ids import new_id
 from app.core.time import iso, now_utc
+from app.repositories.practice_queries import (
+    build_pyq_count_pipeline,
+    build_pyq_list_pipeline,
+    build_question_count_pipeline,
+    build_question_list_pipeline,
+)
 from app.repositories.questions import QuestionRepository, QuestionAttemptRepository, QuestionNoteRepository
 from app.repositories.pyqs import PYQRepository, PYQAttemptRepository
 from app.repositories.mistakes import MistakeRepository
@@ -25,307 +31,18 @@ def is_correct(qtype: str, correct: Any, selected: Any) -> bool:
     return False
 
 
-def build_question_list_pipeline(
-    user_id: str,
-    subject_id: Optional[str],
-    topic_id: Optional[str],
-    question_type: Optional[str],
-    attempted: Optional[str],
-    result: Optional[str],
-    flag: Optional[str],
-    skip: int,
-    limit: int,
-) -> list:
-    match_q: Dict[str, Any] = {"user_id": user_id}
-    if subject_id:
-        match_q["subject_id"] = subject_id
-    if topic_id:
-        match_q["topic_id"] = topic_id
-    if question_type:
-        match_q["question_type"] = question_type
-
-    pipeline: List[Dict[str, Any]] = [
-        {"$match": match_q},
-        {"$lookup": {
-            "from": "question_attempts",
-            "let": {"qid": "$question_id"},
-            "pipeline": [
-                {"$match": {"$expr": {"$and": [
-                    {"$eq": ["$question_id", "$$qid"]},
-                    {"$eq": ["$user_id", user_id]},
-                ]}}},
-                {"$sort": {"attempted_at": -1}},
-                {"$limit": 1},
-            ],
-            "as": "latest_attempt",
-        }},
-        {"$addFields": {
-            "last_attempt": {"$arrayElemAt": ["$latest_attempt", 0]},
-        }},
-        {"$lookup": {
-            "from": "question_attempts",
-            "let": {"qid": "$question_id"},
-            "pipeline": [
-                {"$match": {"$expr": {"$and": [
-                    {"$eq": ["$question_id", "$$qid"]},
-                    {"$eq": ["$user_id", user_id]},
-                ]}}},
-                {"$group": {
-                    "_id": "$question_id",
-                    "count": {"$sum": 1},
-                    "correct": {"$sum": {"$cond": ["$is_correct", 1, 0]}},
-                }},
-            ],
-            "as": "attempt_stats",
-        }},
-        {"$addFields": {
-            "stats": {"$arrayElemAt": ["$attempt_stats", 0]},
-        }},
-        {"$lookup": {
-            "from": "question_flags",
-            "localField": "question_id",
-            "foreignField": "question_id",
-            "as": "flag_docs",
-        }},
-        {"$addFields": {
-            "flags": {
-                "$map": {
-                    "input": {
-                        "$filter": {
-                            "input": "$flag_docs",
-                            "as": "f",
-                            "cond": {"$eq": ["$$f.user_id", user_id]},
-                        }
-                    },
-                    "as": "f",
-                    "in": "$$f.flag_type",
-                }
-            }
-        }},
-        {"$lookup": {
-            "from": "subjects",
-            "localField": "subject_id",
-            "foreignField": "subject_id",
-            "as": "subj",
-        }},
-        {"$lookup": {
-            "from": "topics",
-            "localField": "topic_id",
-            "foreignField": "topic_id",
-            "as": "top",
-        }},
-        {"$addFields": {
-            "subject_name": {"$arrayElemAt": ["$subj.name", 0]},
-            "topic_name": {"$arrayElemAt": ["$top.name", 0]},
-            "user_progress": {
-                "count": {"$ifNull": ["$stats.count", 0]},
-                "correct": {"$ifNull": ["$stats.correct", 0]},
-                "last_correct": {"$ifNull": ["$last_attempt.is_correct", None]},
-            },
-        }},
-    ]
-
-    if attempted == "true":
-        if result == "correct":
-            pipeline.append({"$match": {"last_attempt.is_correct": True}})
-        elif result == "incorrect":
-            pipeline.append({"$match": {"last_attempt.is_correct": False}})
-        else:
-            pipeline.append({"$match": {"last_attempt": {"$ne": None}}})
-    elif attempted == "false":
-        pipeline.append({"$match": {"last_attempt": None}})
-
-    if flag in ("review", "important"):
-        pipeline.append({"$match": {"flags": flag}})
-
-    pipeline.extend([
-        {"$sort": {"created_at": -1}},
-        {"$skip": skip},
-        {"$limit": limit},
-        {"$project": {
-            "_id": 0,
-            "latest_attempt": 0,
-            "attempt_stats": 0,
-            "flag_docs": 0,
-            "subj": 0,
-            "top": 0,
-            "stats": 0,
-            "last_attempt": 0,
-        }},
-    ])
-
-    return pipeline
-
-
-def build_question_count_pipeline(
-    user_id: str,
-    subject_id: Optional[str],
-    topic_id: Optional[str],
-    question_type: Optional[str],
-    attempted: Optional[str],
-    result: Optional[str],
-    flag: Optional[str],
-) -> list:
-    pipeline = build_question_list_pipeline(
-        user_id, subject_id, topic_id, question_type,
-        attempted, result, flag, skip=0, limit=1,
-    )
-    pipeline.append({"$count": "total"})
-    return pipeline
-
-
-def build_pyq_list_pipeline(
-    user_id: str,
-    subject_id: Optional[str],
-    topic_id: Optional[str],
-    year: Optional[int],
-    attempted: Optional[str],
-    result: Optional[str],
-    flag: Optional[str],
-    skip: int,
-    limit: int,
-) -> list:
-    match_q: Dict[str, Any] = {"user_id": user_id}
-    if subject_id:
-        match_q["subject_id"] = subject_id
-    if topic_id:
-        match_q["topic_id"] = topic_id
-    if year:
-        match_q["year"] = year
-
-    pipeline: List[Dict[str, Any]] = [
-        {"$match": match_q},
-        {"$lookup": {
-            "from": "pyq_attempts",
-            "let": {"pid": "$pyq_id"},
-            "pipeline": [
-                {"$match": {"$expr": {"$and": [
-                    {"$eq": ["$pyq_id", "$$pid"]},
-                    {"$eq": ["$user_id", user_id]},
-                ]}}},
-                {"$sort": {"attempted_at": -1}},
-                {"$limit": 1},
-            ],
-            "as": "latest_attempt",
-        }},
-        {"$addFields": {
-            "last_attempt": {"$arrayElemAt": ["$latest_attempt", 0]},
-        }},
-        {"$lookup": {
-            "from": "pyq_attempts",
-            "let": {"pid": "$pyq_id"},
-            "pipeline": [
-                {"$match": {"$expr": {"$and": [
-                    {"$eq": ["$pyq_id", "$$pid"]},
-                    {"$eq": ["$user_id", user_id]},
-                ]}}},
-                {"$group": {
-                    "_id": "$pyq_id",
-                    "count": {"$sum": 1},
-                    "correct": {"$sum": {"$cond": ["$is_correct", 1, 0]}},
-                }},
-            ],
-            "as": "attempt_stats",
-        }},
-        {"$addFields": {
-            "stats": {"$arrayElemAt": ["$attempt_stats", 0]},
-        }},
-        {"$lookup": {
-            "from": "pyq_flags",
-            "localField": "pyq_id",
-            "foreignField": "pyq_id",
-            "as": "flag_docs",
-        }},
-        {"$addFields": {
-            "flags": {
-                "$map": {
-                    "input": {
-                        "$filter": {
-                            "input": "$flag_docs",
-                            "as": "f",
-                            "cond": {"$eq": ["$$f.user_id", user_id]},
-                        }
-                    },
-                    "as": "f",
-                    "in": "$$f.flag_type",
-                }
-            }
-        }},
-        {"$lookup": {
-            "from": "subjects",
-            "localField": "subject_id",
-            "foreignField": "subject_id",
-            "as": "subj",
-        }},
-        {"$lookup": {
-            "from": "topics",
-            "localField": "topic_id",
-            "foreignField": "topic_id",
-            "as": "top",
-        }},
-        {"$addFields": {
-            "subject_name": {"$arrayElemAt": ["$subj.name", 0]},
-            "topic_name": {"$arrayElemAt": ["$top.name", 0]},
-            "user_progress": {
-                "count": {"$ifNull": ["$stats.count", 0]},
-                "correct": {"$ifNull": ["$stats.correct", 0]},
-                "last_correct": {"$ifNull": ["$last_attempt.is_correct", None]},
-            },
-        }},
-    ]
-
-    if attempted == "true":
-        if result == "correct":
-            pipeline.append({"$match": {"last_attempt.is_correct": True}})
-        elif result == "incorrect":
-            pipeline.append({"$match": {"last_attempt.is_correct": False}})
-        else:
-            pipeline.append({"$match": {"last_attempt": {"$ne": None}}})
-    elif attempted == "false":
-        pipeline.append({"$match": {"last_attempt": None}})
-
-    if flag in ("review", "important"):
-        pipeline.append({"$match": {"flags": flag}})
-
-    pipeline.extend([
-        {"$sort": {"created_at": -1}},
-        {"$skip": skip},
-        {"$limit": limit},
-        {"$project": {
-            "_id": 0,
-            "latest_attempt": 0,
-            "attempt_stats": 0,
-            "flag_docs": 0,
-            "subj": 0,
-            "top": 0,
-            "stats": 0,
-            "last_attempt": 0,
-        }},
-    ])
-
-    return pipeline
-
-
-def build_pyq_count_pipeline(
-    user_id: str,
-    subject_id: Optional[str],
-    topic_id: Optional[str],
-    year: Optional[int],
-    attempted: Optional[str],
-    result: Optional[str],
-    flag: Optional[str],
-) -> list:
-    pipeline = build_pyq_list_pipeline(
-        user_id, subject_id, topic_id, year,
-        attempted, result, flag, skip=0, limit=1,
-    )
-    pipeline.append({"$count": "total"})
-    return pipeline
-
-
 class QuestionService:
-    def __init__(self, repo: QuestionRepository):
+    def __init__(
+        self,
+        repo: QuestionRepository,
+        att_repo: QuestionAttemptRepository,
+        note_repo: QuestionNoteRepository,
+        mistake_repo: MistakeRepository,
+    ):
         self._repo = repo
+        self._att_repo = att_repo
+        self._note_repo = note_repo
+        self._mistake_repo = mistake_repo
 
     async def list_questions(
         self, user_id: str,
@@ -369,6 +86,27 @@ class QuestionService:
         }
         await self._repo.create(doc)
         return doc
+
+    async def update_question(
+        self, user_id: str, question_id: str, updates: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        if not updates:
+            return {"error": "nothing_to_update"}
+        updates["updated_at"] = iso(now_utc())
+        matched = await self._repo.update(question_id, user_id, updates)
+        if matched == 0:
+            return None
+        return await self._repo.find_by_id(question_id, user_id)
+
+    async def delete_question(self, user_id: str, question_id: str) -> int:
+        deleted = await self._repo.delete(question_id, user_id)
+        if deleted == 0:
+            return 0
+        await self._att_repo.delete_all(user_id, question_id)
+        await self._note_repo.delete_all(user_id, question_id)
+        await self._repo.delete_flags(user_id, question_id)
+        await self._mistake_repo.delete_all_for_question(user_id, question_id)
+        return deleted
 
 
 class QuestionAttemptService:
@@ -440,8 +178,13 @@ class QuestionFlagService:
 
 
 class PYQService:
-    def __init__(self, repo: PYQRepository):
+    def __init__(
+        self,
+        repo: PYQRepository,
+        att_repo: PYQAttemptRepository,
+    ):
         self._repo = repo
+        self._att_repo = att_repo
 
     async def list_pyqs(
         self, user_id: str,
@@ -477,6 +220,51 @@ class PYQService:
         }
         await self._repo.create(doc)
         return doc
+
+    async def update_pyq(
+        self, user_id: str, pyq_id: str, updates: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        if not updates:
+            return {"error": "nothing_to_update"}
+        updates["updated_at"] = iso(now_utc())
+        matched = await self._repo.update(pyq_id, user_id, updates)
+        if matched == 0:
+            return None
+        return await self._repo.find_by_id(pyq_id, user_id)
+
+    async def delete_pyq(self, user_id: str, pyq_id: str) -> int:
+        deleted = await self._repo.delete(pyq_id, user_id)
+        if deleted == 0:
+            return 0
+        await self._att_repo.delete_all(user_id, pyq_id)
+        await self._repo.delete_flags(user_id, pyq_id)
+        return deleted
+
+    async def add_flag(
+        self, user_id: str, pyq_id: str, flag_type: str
+    ) -> Optional[str]:
+        if flag_type not in VALID_FLAG_TYPES:
+            return f"flag_type must be one of {sorted(VALID_FLAG_TYPES)}"
+        p = await self._repo.find_by_id(pyq_id, user_id)
+        if p is None:
+            return "PYQ not found"
+        now = iso(now_utc())
+        await self._repo.add_flag({
+            "user_id": user_id, "pyq_id": pyq_id,
+            "flag_type": flag_type, "created_at": now, "updated_at": now,
+        })
+        return None
+
+    async def remove_flag(
+        self, user_id: str, pyq_id: str, flag_type: str
+    ) -> Optional[str]:
+        if flag_type not in VALID_FLAG_TYPES:
+            return f"flag_type must be one of {sorted(VALID_FLAG_TYPES)}"
+        await self._repo.remove_flag(user_id, pyq_id, flag_type)
+        return None
+
+    async def list_flags(self, user_id: str, pyq_id: str) -> list:
+        return await self._repo.get_flags(user_id, pyq_id)
 
 
 class PYQAttemptService:

@@ -4,6 +4,8 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
+from app.schemas.common import OutModel, ProgressOut, VideoSavedOut, VideoNotesOut
+
 
 class PlaylistImportIn(BaseModel):
     youtube_url: str = Field(max_length=500)
