@@ -1,12 +1,16 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from app.core.ids import new_id
 from app.core.time import iso, now_utc
-from app.repositories.questions import QuestionRepository, QuestionAttemptRepository, QuestionNoteRepository
-from app.repositories.pyqs import PYQRepository, PYQAttemptRepository
 from app.repositories.mistakes import MistakeRepository
+from app.repositories.pyqs import PYQAttemptRepository, PYQRepository
+from app.repositories.questions import (
+    QuestionAttemptRepository,
+    QuestionNoteRepository,
+    QuestionRepository,
+)
 from app.schemas.practice import VALID_FLAG_TYPES
 
 

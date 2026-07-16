@@ -187,9 +187,9 @@ maintainability, and then scale.
   - reopening a playlist resumes the correct video and timestamp
   - `Next Video` shifts the queue and keeps the active card visible/centered when possible
   - marking one video watched does not clear another video’s watched state
-- [ ] Add project tooling:
-  - backend lint/format config
-  - frontend lint cleanup
+- [x] Add project tooling:
+  - backend Ruff/Black config
+  - frontend ESLint config with TypeScript parsing
   - CI for backend tests, frontend build, and lint checks
 - [x] Split backend dependency files:
   - runtime dependencies in `backend/requirements.txt`

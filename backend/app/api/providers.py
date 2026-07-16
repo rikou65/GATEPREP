@@ -19,7 +19,7 @@ from app.repositories.playlists import (
     VideoProgressRepository,
     VideoRepository,
 )
-from app.repositories.pyqs import PYQRepository, PYQAttemptRepository
+from app.repositories.pyqs import PYQAttemptRepository, PYQRepository
 from app.repositories.questions import (
     QuestionAttemptRepository,
     QuestionNoteRepository,
@@ -40,8 +40,8 @@ from app.repositories.subjects import SubjectRepository
 from app.repositories.users import UserRepository
 from app.repositories.youtube import YouTubeCredentialRepository
 from app.services.analytics import AnalyticsService
-from app.services.auth.oauth_state_service import OAuthStateService
 from app.services.auth.identity_repair_service import IdentityRepairService
+from app.services.auth.oauth_state_service import OAuthStateService
 from app.services.auth.session_service import SessionService
 from app.services.auth.supabase_service import SupabaseAuthService
 from app.services.auth.user_service import UserService
@@ -60,7 +60,6 @@ from app.services.resources import ResourceService
 from app.services.staging import StagingService
 from app.services.subjects import SubjectService
 from app.services.youtube import YouTubeService
-
 
 # ── DB / Settings ──────────────────────────────────────────────────────────
 

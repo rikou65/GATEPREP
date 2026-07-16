@@ -35,11 +35,13 @@ class TestStagingIsolation:
         backend_dir = str(BACKEND_DIR)
         if backend_dir not in sys.path:
             sys.path.insert(0, backend_dir)
+        import asyncio
+
+        from motor.motor_asyncio import AsyncIOMotorClient
+
         from app.core.config import Settings
         from app.core.ids import new_id
         from app.core.time import iso, now_utc
-        from motor.motor_asyncio import AsyncIOMotorClient
-        import asyncio
 
         settings = Settings(_env_file=str(BACKEND_DIR / ".env"))
         use_tls = "mongodb+srv://" in settings.MONGO_URL
@@ -75,9 +77,11 @@ class TestStagingIsolation:
         backend_dir = str(BACKEND_DIR)
         if backend_dir not in sys.path:
             sys.path.insert(0, backend_dir)
-        from app.core.config import Settings
-        from motor.motor_asyncio import AsyncIOMotorClient
         import asyncio
+
+        from motor.motor_asyncio import AsyncIOMotorClient
+
+        from app.core.config import Settings
 
         settings = Settings(_env_file=str(BACKEND_DIR / ".env"))
         use_tls = "mongodb+srv://" in settings.MONGO_URL

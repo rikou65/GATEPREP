@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """At-rest encryption for stored OAuth tokens (Drive + YouTube).
 
 When ``TOKEN_ENCRYPTION_KEY`` is configured (a 32-byte base64-url Fernet key),
@@ -8,6 +6,8 @@ boundary. When the key is absent, values pass through unchanged so the app
 remains functional in local development. This matches the graceful-degrade
 pattern used for Supabase config.
 """
+
+from __future__ import annotations
 
 from typing import Optional
 

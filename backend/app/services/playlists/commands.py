@@ -5,16 +5,16 @@ from typing import Any, Dict, List, Optional
 
 from app.core.ids import new_id
 from app.core.time import iso, now_utc
+from app.integrations.google_youtube import (
+    YouTubeAPI,
+    YouTubeAPIError,
+    YouTubeTokenManager,
+)
 from app.repositories.playlists import (
     PlaylistRepository,
     VideoNoteRepository,
     VideoProgressRepository,
     VideoRepository,
-)
-from app.integrations.google_youtube import (
-    YouTubeAPI,
-    YouTubeAPIError,
-    YouTubeTokenManager,
 )
 from app.repositories.youtube import YouTubeCredentialRepository
 

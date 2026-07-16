@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import Depends, HTTPException, Request
+from fastapi import HTTPException, Request
 
 from app.integrations.supabase_auth import SupabaseAuthIntegration
 from app.repositories.users import UserRepository

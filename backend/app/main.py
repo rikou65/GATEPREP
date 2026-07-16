@@ -1,6 +1,6 @@
-from __future__ import annotations
-
 """GATEPREP — FastAPI application factory."""
+
+from __future__ import annotations
 
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -11,15 +11,14 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from starlette.middleware.cors import CORSMiddleware
 
-from app.api.endpoints.auth import router as auth_router
-from app.api.endpoints.subjects import router as subjects_router
-from app.api.endpoints.practice import router as practice_router
 from app.api.endpoints.analytics import router as analytics_router
+from app.api.endpoints.auth import router as auth_router
 from app.api.endpoints.playlists import router as playlists_router
+from app.api.endpoints.practice import router as practice_router
 from app.api.endpoints.resources import router as resources_router
-from app.api.endpoints.youtube import router as youtube_router
 from app.api.endpoints.staging import router as staging_router
-from app.api.responses import ok
+from app.api.endpoints.subjects import router as subjects_router
+from app.api.endpoints.youtube import router as youtube_router
 from app.core.config import Settings
 from app.core.db import create_db_client
 from app.core.logging import logger
@@ -171,18 +170,18 @@ def _setup_error_handlers(app: FastAPI) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    from app.bootstrap.seed import seed_data
     from app.bootstrap import migrations
     from app.bootstrap.migrations import (
-        _migrate_v2_split_subjects,
-        _migrate_per_user_content,
-        _ensure_runtime_indexes,
-        _purge_global_staging_records,
-        _hash_existing_session_tokens,
         _encrypt_existing_token_credentials,
+        _ensure_runtime_indexes,
+        _hash_existing_session_tokens,
+        _migrate_per_user_content,
+        _migrate_v2_split_subjects,
+        _purge_global_staging_records,
     )
-    from app.core.security import configure_session_secret
+    from app.bootstrap.seed import seed_data
     from app.core.crypto import configure_token_encryption_key
+    from app.core.security import configure_session_secret
 
     app_db = app.state.db
     app_settings: Settings = app.state.settings

@@ -2,9 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-from app.core.config import Settings
 from app.integrations.supabase_auth import SupabaseAuthIntegration
-from app.repositories.migration import MigrationRepository
 from app.repositories.users import UserRepository
 from app.services.auth.identity_repair_service import IdentityRepairService
 

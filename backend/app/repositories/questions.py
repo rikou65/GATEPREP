@@ -143,8 +143,8 @@ class QuestionNoteRepository:
         )
 
     async def upsert(self, user_id: str, question_id: str, content: str) -> None:
-        from app.core.time import iso, now_utc
         from app.core.ids import new_id
+        from app.core.time import iso, now_utc
 
         await self._db.question_notes.update_one(
             {"user_id": user_id, "question_id": question_id},

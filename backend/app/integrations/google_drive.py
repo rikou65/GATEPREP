@@ -1,21 +1,18 @@
 from __future__ import annotations
 
 import asyncio
-import io
 import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-import httpx
 from google.auth.transport.requests import Request as GoogleRequest
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseUpload
 
 from app.core.config import Settings
 from app.core.constants import DRIVE_SCOPES
-from app.core.time import iso, now_utc
+from app.core.time import iso
 from app.repositories.resources import DriveCredentialRepository
 
 

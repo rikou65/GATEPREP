@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """Security helpers.
 
 Password auth is delegated to Supabase. These functions intentionally fail if
@@ -9,9 +7,10 @@ Session-token hashing is handled locally so session tokens are never stored
 in plaintext in ``user_sessions`` (a DB read alone cannot hijack a session).
 """
 
+from __future__ import annotations
+
 import hashlib
 import hmac
-
 
 _session_secret: str = ""
 

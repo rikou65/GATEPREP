@@ -25,10 +25,10 @@ from app.schemas.practice import (
     MistakeIn,
     NotesIn,
     PracticeListOut,
+    PYQIn,
     QuestionIn,
     QuestionNotesOut,
     QuestionPatch,
-    PYQIn,
 )
 from app.services.practice import (
     MistakeService,

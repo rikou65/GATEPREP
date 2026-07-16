@@ -6,7 +6,6 @@ from fastapi import APIRouter, Depends, Query, Request, Response
 
 from app.api.deps import get_current_user
 from app.api.providers import (
-    get_google_oauth_integration,
     get_oauth_state_service,
     get_settings,
     get_youtube_service,

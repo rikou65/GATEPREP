@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
-from app.schemas.common import FlagsOut, OutModel
+from app.schemas.common import OutModel
 
 VALID_FLAG_TYPES = {"review", "important"}
 

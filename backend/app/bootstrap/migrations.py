@@ -1,7 +1,7 @@
 """Database migrations for GATEPREP."""
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Dict, List
 
 from app.core.ids import new_id
 from app.core.logging import logger
@@ -253,7 +253,7 @@ async def _hash_existing_session_tokens() -> None:
                 {"$set": {"session_token": hash_session_token(tok)}},
             )
             migrated += 1
-        except Exception as exc:
+        except Exception:
             # A residual collision (e.g. two rows that dedupe missed) — drop
             # the loser rather than let startup crash on a stale dev session.
             await db.user_sessions.delete_one({"_id": doc["_id"]})

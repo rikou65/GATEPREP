@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-from app.repositories.users import UserRepository
 from app.repositories.sessions import SessionRepository
+from app.repositories.users import UserRepository
 
 
 class UserService:

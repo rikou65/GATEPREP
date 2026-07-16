@@ -1,8 +1,8 @@
+import asyncio
 import os
 import sys
-import asyncio
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from datetime import datetime, timezone, timedelta
 from urllib.parse import urlsplit
 
 import pytest
@@ -28,11 +28,9 @@ test_client = None
 _original_requests = {}
 
 async def seed_test_users():
-    from app.core.config import Settings
-    from app.core.ids import new_id
-    from app.core.time import iso, now_utc
-    from app.bootstrap.seed import seed_data
     from app.bootstrap import migrations
+    from app.bootstrap.seed import seed_data
+    from app.core.config import Settings
 
     os.environ.setdefault("MONGO_URL", "mongodb://localhost:27017")
     os.environ.setdefault("DB_NAME", "gateprep_test")

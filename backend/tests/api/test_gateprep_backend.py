@@ -1,7 +1,7 @@
 """Backend integration tests for GATEPREP."""
-from typing import Dict, List, Any
 import asyncio
 from pathlib import Path
+from typing import Any, Dict, List
 
 import requests
 from motor.motor_asyncio import AsyncIOMotorClient

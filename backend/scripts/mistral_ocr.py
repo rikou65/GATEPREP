@@ -3,17 +3,15 @@ Mistral AI OCR Ingestion Pipeline (OCR + Mistral Large)
 Orchestrates page slicing, Mistral OCR, structured chat parsing, and relational stitching.
 """
 
-import os
-import time
 import asyncio
-from pathlib import Path
-from typing import List, Dict, Any, Optional
+import os
+import sys
+from typing import Any, Dict, List, Optional
 
 import pypdfium2 as pdfium
 from mistralai.client import Mistral
 from pydantic import BaseModel, Field
 
-import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from app.core.config import Settings
@@ -234,8 +232,10 @@ class MistralOCRPipeline:
                     logger.error(f"Error processing chunk {start_page}-{end_page}: {e}")
                 finally:
                     if os.path.exists(temp_file):
-                        try: os.remove(temp_file)
-                        except: pass
+                        try:
+                            os.remove(temp_file)
+                        except OSError:
+                            pass
 
             logger.info("Mistral OCR Pipeline completed successfully.")
             if self.job_id:

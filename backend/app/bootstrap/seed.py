@@ -4,7 +4,6 @@ from __future__ import annotations
 from typing import Any, Dict
 
 from app.core.ids import new_id
-from app.core.logging import logger
 from app.core.time import iso, now_utc
 
 db = None

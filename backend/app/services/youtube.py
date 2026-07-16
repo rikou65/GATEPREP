@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
-from typing import Any, Dict, Optional
-
-import httpx
+from typing import Any, Dict
 
 from app.core.time import iso, now_utc
 from app.integrations.google_youtube import YouTubeTokenManager

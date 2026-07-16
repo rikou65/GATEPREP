@@ -6,7 +6,7 @@ import urllib.parse
 from typing import Optional
 
 import httpx
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Request, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, UploadFile
 
 from app.api.deps import get_current_user
 from app.api.providers import (

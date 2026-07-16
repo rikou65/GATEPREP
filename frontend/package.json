@@ -27,6 +27,8 @@
   "scripts": {
     "dev": "vite",
     "start": "vite",
+    "lint": "eslint src --quiet",
+    "lint:warn": "eslint src",
     "build": "vite build",
     "preview": "vite preview"
   },
@@ -44,6 +46,8 @@
   },
   "devDependencies": {
     "@eslint/js": "9.23.0",
+    "@typescript-eslint/eslint-plugin": "^8.64.0",
+    "@typescript-eslint/parser": "^8.64.0",
     "@vitejs/plugin-react": "^6.0.3",
     "autoprefixer": "10.4.20",
     "eslint": "9.23.0",
@@ -54,6 +58,7 @@
     "globals": "15.15.0",
     "postcss": "8.4.49",
     "tailwindcss": "3.4.17",
+    "typescript": "^5.9.3",
     "vite": "^8.1.1"
   }
 }

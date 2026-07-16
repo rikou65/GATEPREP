@@ -1,7 +1,6 @@
 import os
 from typing import Dict
 
-
 BASE_URL: str = os.environ.get(
     "VITE_BACKEND_URL", "http://localhost:8001"
 ).rstrip("/")

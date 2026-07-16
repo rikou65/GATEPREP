@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Depends, Response
 
 from app.api.deps import get_current_user, get_session_token
 from app.api.providers import (
     get_google_oauth_integration,
+    get_identity_repair_service,
+    get_oauth_state_service,
     get_session_repo,
     get_session_service,
     get_settings,
-    get_oauth_state_service,
-    get_identity_repair_service,
     get_supabase_auth_service,
 )
 from app.api.responses import err, ok
