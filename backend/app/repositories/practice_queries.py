@@ -341,6 +341,47 @@ def build_pyq_count_pipeline(
     return pipeline
 
 
+def build_mistake_list_pipeline(
+    user_id: str,
+    subject_id: Optional[str],
+    topic_id: Optional[str],
+    mistake_type: Optional[str],
+) -> list:
+    match_q: Dict[str, Any] = {"user_id": user_id}
+    if subject_id:
+        match_q["subject_id"] = subject_id
+    if topic_id:
+        match_q["topic_id"] = topic_id
+    if mistake_type:
+        match_q["mistake_type"] = mistake_type
+
+    return [
+        {"$match": match_q},
+        {"$sort": {"created_at": -1}},
+        {"$limit": 500},
+        {
+            "$lookup": {
+                "from": "questions",
+                "localField": "question_id",
+                "foreignField": "question_id",
+                "as": "q_detail",
+            }
+        },
+        {
+            "$addFields": {
+                "question": {"$arrayElemAt": ["$q_detail", 0]},
+            }
+        },
+        {
+            "$project": {
+                "_id": 0,
+                "q_detail": 0,
+                "question._id": 0,
+            }
+        },
+    ]
+
+
 def _append_attempt_and_flag_filters(
     pipeline: list,
     attempted: Optional[str],

@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional
 from app.core.ids import new_id
 from app.core.time import iso, now_utc
 from app.repositories.practice_queries import (
+    build_mistake_list_pipeline,
     build_pyq_count_pipeline,
     build_pyq_list_pipeline,
     build_question_count_pipeline,
@@ -303,33 +304,12 @@ class MistakeService:
         topic_id: Optional[str] = None,
         mistake_type: Optional[str] = None,
     ) -> list:
-        q: Dict[str, Any] = {"user_id": user_id}
-        if subject_id:
-            q["subject_id"] = subject_id
-        if topic_id:
-            q["topic_id"] = topic_id
-        if mistake_type:
-            q["mistake_type"] = mistake_type
-
-        pipeline = [
-            {"$match": q},
-            {"$sort": {"created_at": -1}},
-            {"$limit": 500},
-            {"$lookup": {
-                "from": "questions",
-                "localField": "question_id",
-                "foreignField": "question_id",
-                "as": "q_detail",
-            }},
-            {"$addFields": {
-                "question": {"$arrayElemAt": ["$q_detail", 0]},
-            }},
-            {"$project": {
-                "_id": 0,
-                "q_detail": 0,
-                "question._id": 0,
-            }},
-        ]
+        pipeline = build_mistake_list_pipeline(
+            user_id,
+            subject_id,
+            topic_id,
+            mistake_type,
+        )
         return await self._repo.list_with_aggregation(pipeline)
 
     async def create_mistake(self, user_id: str, question_id: str, mistake_type: str, note: str) -> Optional[Dict[str, Any]]:
