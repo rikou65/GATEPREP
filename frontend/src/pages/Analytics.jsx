@@ -30,6 +30,33 @@ const tooltipStyle = {
 };
 const axisStroke = "hsl(var(--muted-foreground))";
 
+const SUBJECT_ABBREVIATIONS = {
+  "engineering mathematics": "EM",
+  "discrete mathematics": "DM",
+  "digital logic": "DL",
+  "computer organization and architecture": "COA",
+  "c programming": "C_PROG",
+  "data structures": "DS",
+  "algorithms": "ALGO",
+  "theory of computation": "TOC",
+  "compiler design": "CD",
+  "operating systems": "OS",
+  "databases": "DB",
+  "computer networks": "CN",
+};
+
+const subjectShortName = (name = "") => {
+  const normalized = name.trim().toLowerCase();
+  if (SUBJECT_ABBREVIATIONS[normalized]) return SUBJECT_ABBREVIATIONS[normalized];
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 8) || name;
+};
+
 /* ─── helper: accuracy colour ─── */
 const accTone = (acc, has) => {
   if (!has) return "text-muted-foreground/50";
@@ -255,14 +282,14 @@ export default function Analytics() {
 
   /* ── Derived data for overview charts ── */
   const solvedChartData = subjects.map(sub => ({
-    name: sub.subject.name.length > 12 ? sub.subject.name.slice(0, 10) + "…" : sub.subject.name,
+    name: subjectShortName(sub.subject.name),
     fullName: sub.subject.name,
     QBank: sub.qb.solved,
     PYQ: sub.pyq.solved,
   }));
 
   const accChartData = subjects.map(sub => ({
-    name: sub.subject.name.length > 12 ? sub.subject.name.slice(0, 10) + "…" : sub.subject.name,
+    name: subjectShortName(sub.subject.name),
     fullName: sub.subject.name,
     "QBank Acc": sub.qb.accuracy,
     "PYQ Acc": sub.pyq.accuracy,
@@ -272,7 +299,8 @@ export default function Analytics() {
   const radarData = subjects
     .filter(sub => sub.qb.solved > 0 || sub.pyq.solved > 0)
     .map(sub => ({
-      subject: sub.subject.name.split(" ")[0],
+      subject: subjectShortName(sub.subject.name),
+      fullName: sub.subject.name,
       QBank: sub.qb.accuracy,
       PYQ: sub.pyq.accuracy,
     }));
@@ -286,7 +314,11 @@ export default function Analytics() {
   /* subject distribution pie */
   const subjectDistribution = subjects
     .filter(sub => sub.qb.solved + sub.pyq.solved > 0)
-    .map(sub => ({ name: sub.subject.name, value: sub.qb.solved + sub.pyq.solved }));
+    .map(sub => ({
+      name: subjectShortName(sub.subject.name),
+      fullName: sub.subject.name,
+      value: sub.qb.solved + sub.pyq.solved,
+    }));
 
   /* weakest + strongest subjects */
   const subjectsWithAcc = subjects
@@ -346,7 +378,7 @@ export default function Analytics() {
                   <Radar name="QBank" dataKey="QBank" stroke={EMERALD} fill={EMERALD} fillOpacity={0.2} strokeWidth={2} />
                   <Radar name="PYQ" dataKey="PYQ" stroke={BLUE} fill={BLUE} fillOpacity={0.15} strokeWidth={2} />
                   <Legend wrapperStyle={{ fontSize: 11 }} />
-                  <Tooltip contentStyle={tooltipStyle} formatter={(val) => [`${val}%`]} />
+                  <Tooltip contentStyle={tooltipStyle} formatter={(val) => [`${val}%`]} labelFormatter={(label, payload) => payload?.[0]?.payload?.fullName || label} />
                 </RadarChart>
               </ResponsiveContainer>
             </div>
@@ -399,7 +431,7 @@ export default function Analytics() {
                     innerRadius={50} outerRadius={85}
                     paddingAngle={2}
                     dataKey="value"
-                    label={({ name, percent }) => `${name.split(" ")[0]} ${(percent * 100).toFixed(0)}%`}
+                    label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
                     labelLine={false}
                     fontSize={9}
                   >
@@ -407,7 +439,7 @@ export default function Analytics() {
                       <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
                     ))}
                   </Pie>
-                  <Tooltip contentStyle={tooltipStyle} formatter={(val, name) => [`${val} solved`, name]} />
+                  <Tooltip contentStyle={tooltipStyle} formatter={(val, name, props) => [`${val} solved`, props?.payload?.fullName || name]} />
                 </PieChart>
               </ResponsiveContainer>
             </div>
