@@ -42,42 +42,7 @@ class PlaylistQueries:
     async def list_playlists(
         self, user_id: str, subject_id: Optional[str] = None, yt_refresh_cb=None
     ) -> List[Dict[str, Any]]:
-        q: Dict[str, Any] = {"user_id": user_id}
-        if subject_id:
-            q["subject_id"] = subject_id
-
-        pipeline = [
-            {"$match": q},
-            {"$sort": {"created_at": -1}},
-            {
-                "$lookup": {
-                    "from": "videos",
-                    "localField": "playlist_id",
-                    "foreignField": "playlist_id",
-                    "as": "vids",
-                }
-            },
-            {
-                "$lookup": {
-                    "from": "video_progress",
-                    "let": {"uid": user_id, "vid_ids": "$vids.video_id"},
-                    "pipeline": [
-                        {
-                            "$match": {
-                                "$expr": {
-                                    "$and": [
-                                        {"$eq": ["$user_id", "$$uid"]},
-                                        {"$in": ["$video_id", "$$vid_ids"]},
-                                    ]
-                                }
-                            }
-                        }
-                    ],
-                    "as": "prog",
-                }
-            },
-        ]
-        docs = await self._playlist_repo.list_with_aggregation(pipeline)
+        docs = await self._playlist_repo.list_summaries(user_id, subject_id)
         needs_refresh = []
         for doc in docs:
             doc.pop("_id", None)

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
+from app.repositories.playlist_queries import playlist_summary_pipeline
+
 
 class PlaylistRepository:
     def __init__(self, db):
@@ -30,7 +32,10 @@ class PlaylistRepository:
     async def delete(self, playlist_id: str) -> None:
         await self._db.playlists.delete_one({"playlist_id": playlist_id})
 
-    async def list_with_aggregation(self, pipeline: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    async def list_summaries(
+        self, user_id: str, subject_id: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        pipeline = playlist_summary_pipeline(user_id, subject_id)
         return await self._db.playlists.aggregate(pipeline).to_list(500)
 
 
