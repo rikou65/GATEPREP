@@ -50,6 +50,7 @@ export default function PlaylistDetail() {
   const [resumed, setResumed] = useState(false);
   const playerRef = useRef(null);
   const trackRef = useRef(null);
+  const lastPersistRef = useRef(0);
   const queueRef = useRef(null);
   const playerContainerRef = useRef(null);
 
@@ -135,10 +136,14 @@ export default function PlaylistDetail() {
             }
           },
           onStateChange: (e) => {
-            if (e.data === 1) startTracking();
-            else stopTracking();
             if (e.data === 0) {
-              syncProgress(100, true);
+              stopTracking();
+              syncProgress(100, video.duration || 0, { completed: true, invalidate: true });
+            } else if (e.data === 1) {
+              startTracking();
+            } else {
+              captureProgress(true);
+              stopTracking();
             }
           },
         },
@@ -152,34 +157,59 @@ export default function PlaylistDetail() {
 
   const startTracking = () => {
     stopTracking();
-    trackRef.current = setInterval(async () => {
-      const p = playerRef.current;
-      if (!p?.getCurrentTime) return;
-      const cur = p.getCurrentTime();
-      const dur = p.getDuration();
-      if (!dur) return;
-      const pct = Math.min(100, Math.round((cur / dur) * 100));
-      syncProgress(pct, Math.round(cur));
-    }, 5000);
+    captureProgress(false);
+    trackRef.current = setInterval(() => {
+      const shouldPersist = Date.now() - lastPersistRef.current >= 5000;
+      captureProgress(shouldPersist);
+    }, 1000);
   };
   const stopTracking = () => { if (trackRef.current) clearInterval(trackRef.current); trackRef.current = null; };
 
-  const syncProgress = async (pct, watchTime) => {
+  const updateLocalProgress = (idx, pct, watchTime, completed) => {
+    setPlaylist((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        videos: prev.videos.map((v, i) => i === idx
+          ? {
+              ...v,
+              progress: {
+                ...(v.progress || {}),
+                watch_percentage: pct,
+                watch_time: typeof watchTime === "number" ? watchTime : 0,
+                ...(typeof completed === "boolean" ? { completed } : {}),
+              },
+            }
+          : v),
+      };
+    });
+  };
+
+  const captureProgress = (persist) => {
+    const p = playerRef.current;
+    if (!p?.getCurrentTime) return;
+    const cur = p.getCurrentTime();
+    const dur = p.getDuration();
+    if (!dur) return;
+    const pct = Math.min(100, Math.round((cur / dur) * 100));
+    syncProgress(pct, Math.round(cur), { persist });
+  };
+
+  const syncProgress = async (pct, watchTime, options = {}) => {
     const video = playlist?.videos?.[activeIdx];
     if (!video) return;
+    updateLocalProgress(activeIdx, pct, watchTime, options.completed);
+    if (options.persist === false) return;
+    lastPersistRef.current = Date.now();
     try {
       await saveVideoProgress.mutateAsync({
         videoId: video.video_id,
         payload: {
-        watch_percentage: pct,
-        watch_time: typeof watchTime === "number" ? watchTime : 0,
+          watch_percentage: pct,
+          watch_time: typeof watchTime === "number" ? watchTime : 0,
+          ...(typeof options.completed === "boolean" ? { completed: options.completed } : {}),
         },
-      });
-      setPlaylist((prev) => {
-        if (!prev) return prev;
-        return { ...prev, videos: prev.videos.map((v, i) => i === activeIdx
-          ? { ...v, progress: { ...(v.progress || {}), watch_percentage: pct } }
-          : v) };
+        invalidate: !!options.invalidate,
       });
     } catch (_err) { /* silent */ }
   };
@@ -190,6 +220,7 @@ export default function PlaylistDetail() {
       await saveVideoProgress.mutateAsync({
         videoId: video.video_id,
         payload: { watch_percentage: 100, watch_time: video.duration || 0, completed: true },
+        invalidate: true,
       });
       setPlaylist((prev) => ({
         ...prev,
@@ -207,6 +238,7 @@ export default function PlaylistDetail() {
       await saveVideoProgress.mutateAsync({
         videoId: video.video_id,
         payload: { watch_percentage: 0, watch_time: 0, completed: false },
+        invalidate: true,
       });
       setPlaylist((prev) => ({
         ...prev,

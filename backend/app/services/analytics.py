@@ -1,8 +1,14 @@
 from __future__ import annotations
 
+import asyncio
+from copy import deepcopy
+from time import monotonic
 from typing import Any, Dict, List, Optional
 
 from app.repositories.analytics import AnalyticsRepository
+
+DASHBOARD_CACHE_TTL_SECONDS = 20.0
+_dashboard_cache: Dict[str, tuple[float, Dict[str, Any]]] = {}
 
 
 class AnalyticsService:
@@ -10,27 +16,67 @@ class AnalyticsService:
         self._repo = repo
 
     async def get_dashboard(self, user_id: str) -> Dict[str, Any]:
-        q_stats = await self._repo.get_latest_attempt_stats(
-            user_id, "question_attempts", "question_id"
-        )
-        p_stats = await self._repo.get_latest_attempt_stats(
-            user_id, "pyq_attempts", "pyq_id"
-        )
+        cached = _dashboard_cache.get(user_id)
+        now = monotonic()
+        if cached and now - cached[0] < DASHBOARD_CACHE_TTL_SECONDS:
+            return deepcopy(cached[1])
 
-        counts = {
-            "playlists": await self._repo.count(
-                "playlists", {"user_id": user_id}
+        async def collect_counts() -> Dict[str, int]:
+            playlists, videos_done, mistakes, resources = await asyncio.gather(
+                self._repo.count("playlists", {"user_id": user_id}),
+                self._repo.count(
+                    "video_progress", {"user_id": user_id, "completed": True}
+                ),
+                self._repo.count("mistakes", {"user_id": user_id}),
+                self._repo.count("resources", {"user_id": user_id}),
+            )
+            return {
+                "playlists": playlists,
+                "videos_done": videos_done,
+                "mistakes": mistakes,
+                "resources": resources,
+            }
+
+        async def collect_subject_totals(collection: str) -> Dict[str, int]:
+            return {
+                r["_id"]: r["count"]
+                async for r in self._repo.aggregate_cursor(collection, [
+                    {"$match": {"user_id": user_id}},
+                    {"$group": {"_id": "$subject_id", "count": {"$sum": 1}}},
+                ])
+            }
+
+        (
+            q_stats,
+            p_stats,
+            counts,
+            subjects,
+            q_totals,
+            p_totals,
+            q_progress,
+            p_progress,
+            recent,
+        ) = await asyncio.gather(
+            self._repo.get_latest_attempt_stats(
+                user_id, "question_attempts", "question_id"
             ),
-            "videos_done": await self._repo.count(
-                "video_progress", {"user_id": user_id, "completed": True}
+            self._repo.get_latest_attempt_stats(
+                user_id, "pyq_attempts", "pyq_id"
             ),
-            "mistakes": await self._repo.count(
-                "mistakes", {"user_id": user_id}
+            collect_counts(),
+            self._repo.find_all(
+                "subjects", {}, {"_id": 0, "subject_id": 1, "name": 1, "order": 1}
             ),
-            "resources": await self._repo.count(
-                "resources", {"user_id": user_id}
+            collect_subject_totals("questions"),
+            collect_subject_totals("pyqs"),
+            self._repo.get_subject_breakdown(
+                user_id, "question_attempts", "questions", "question_id"
             ),
-        }
+            self._repo.get_subject_breakdown(
+                user_id, "pyq_attempts", "pyqs", "pyq_id"
+            ),
+            self._get_recent_activity(user_id),
+        )
 
         summary = {
             "questions_solved": q_stats["solved"],
@@ -42,30 +88,6 @@ class AnalyticsService:
             "total_mistakes": counts["mistakes"],
             "resources_uploaded": counts["resources"],
         }
-
-        subjects = await self._repo.find_all("subjects", {}, {"_id": 0, "subject_id": 1, "name": 1, "order": 1})
-
-        q_totals = {
-            r["_id"]: r["count"]
-            async for r in self._repo.aggregate_cursor("questions", [
-                {"$match": {"user_id": user_id}},
-                {"$group": {"_id": "$subject_id", "count": {"$sum": 1}}},
-            ])
-        }
-        p_totals = {
-            r["_id"]: r["count"]
-            async for r in self._repo.aggregate_cursor("pyqs", [
-                {"$match": {"user_id": user_id}},
-                {"$group": {"_id": "$subject_id", "count": {"$sum": 1}}},
-            ])
-        }
-
-        q_progress = await self._repo.get_subject_breakdown(
-            user_id, "question_attempts", "questions", "question_id"
-        )
-        p_progress = await self._repo.get_subject_breakdown(
-            user_id, "pyq_attempts", "pyqs", "pyq_id"
-        )
 
         overview = []
         for s in subjects:
@@ -100,8 +122,9 @@ class AnalyticsService:
                 },
             })
 
-        recent = await self._get_recent_activity(user_id)
-        return {"summary": summary, "subjects": overview, "recent_activity": recent}
+        result = {"summary": summary, "subjects": overview, "recent_activity": recent}
+        _dashboard_cache[user_id] = (now, deepcopy(result))
+        return result
 
     async def _get_recent_activity(self, user_id: str) -> list:
         qa_pipeline = [
@@ -170,10 +193,10 @@ class AnalyticsService:
             }},
         ]
 
-        qa_recent = await self._repo.aggregate(
-            "question_attempts", qa_pipeline
+        qa_recent, pa_recent = await asyncio.gather(
+            self._repo.aggregate("question_attempts", qa_pipeline),
+            self._repo.aggregate("pyq_attempts", pa_pipeline),
         )
-        pa_recent = await self._repo.aggregate("pyq_attempts", pa_pipeline)
 
         merged = [
             {"type": "question", **a} for a in qa_recent

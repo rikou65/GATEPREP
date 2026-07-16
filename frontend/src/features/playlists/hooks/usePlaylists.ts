@@ -55,9 +55,43 @@ export function useSaveVideoNotes(videoId: string | undefined) {
 export function useSaveVideoProgress(playlistId: string | undefined) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ videoId, payload }: { videoId: string; payload: unknown }) =>
+    mutationFn: ({ videoId, payload }: { videoId: string; payload: {
+      watch_percentage?: number;
+      watch_time?: number;
+      completed?: boolean;
+    }; invalidate?: boolean }) =>
       playlistsApi.saveProgress(videoId, payload),
-    onSuccess: () => {
+    onMutate: async ({ videoId, payload }) => {
+      if (!playlistId) return {};
+      const queryKey = queryKeys.playlists.detail(playlistId);
+      await queryClient.cancelQueries({ queryKey });
+      const previous = queryClient.getQueryData(queryKey);
+      queryClient.setQueryData(queryKey, (old: any) => {
+        if (!old?.videos) return old;
+        return {
+          ...old,
+          videos: old.videos.map((video: any) =>
+            video.video_id === videoId
+              ? {
+                  ...video,
+                  progress: {
+                    ...(video.progress || {}),
+                    ...payload,
+                  },
+                }
+              : video
+          ),
+        };
+      });
+      return { previous };
+    },
+    onError: (_err, _vars, context) => {
+      if (playlistId && context?.previous) {
+        queryClient.setQueryData(queryKeys.playlists.detail(playlistId), context.previous);
+      }
+    },
+    onSuccess: (_data, variables) => {
+      if (!variables.invalidate) return;
       if (playlistId) queryClient.invalidateQueries({ queryKey: queryKeys.playlists.detail(playlistId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.playlists.all() });
     },

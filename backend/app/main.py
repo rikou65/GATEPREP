@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 from pathlib import Path
+from time import perf_counter
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
@@ -52,6 +53,7 @@ def create_app() -> FastAPI:
     )
 
     _setup_middleware(app)
+    _setup_request_timing(app)
     _mount_routes(app)
     _setup_error_handlers(app)
 
@@ -77,6 +79,26 @@ def _setup_middleware(app: FastAPI) -> None:
         allow_headers=["*"],
         expose_headers=["*"],
     )
+
+
+def _setup_request_timing(app: FastAPI) -> None:
+    @app.middleware("http")
+    async def request_timing(request: Request, call_next):
+        start = perf_counter()
+        status_code = 500
+        try:
+            response = await call_next(request)
+            status_code = response.status_code
+            return response
+        finally:
+            duration_ms = (perf_counter() - start) * 1000
+            logger.info(
+                "request method=%s path=%s status=%s duration_ms=%.1f",
+                request.method,
+                request.url.path,
+                status_code,
+                duration_ms,
+            )
 
 
 def _mount_routes(app: FastAPI) -> None:
