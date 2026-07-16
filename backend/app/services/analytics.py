@@ -6,17 +6,6 @@ from time import monotonic
 from typing import Any, Dict, List, Optional
 
 from app.repositories.analytics import AnalyticsRepository
-from app.repositories.analytics_queries import (
-    mistakes_by_topic_pipeline,
-    notes_by_question_pipeline,
-    question_ids_by_topic_pipeline,
-    question_ids_for_topic_pipeline,
-    recent_pyq_activity_pipeline,
-    recent_question_activity_pipeline,
-    single_topic_stats_pipeline,
-    subject_total_pipeline,
-    topic_total_pipeline,
-)
 
 DASHBOARD_CACHE_TTL_SECONDS = 20.0
 _dashboard_cache: Dict[str, tuple[float, Dict[str, Any]]] = {}
@@ -32,30 +21,6 @@ class AnalyticsService:
         if cached and now - cached[0] < DASHBOARD_CACHE_TTL_SECONDS:
             return deepcopy(cached[1])
 
-        async def collect_counts() -> Dict[str, int]:
-            playlists, videos_done, mistakes, resources = await asyncio.gather(
-                self._repo.count("playlists", {"user_id": user_id}),
-                self._repo.count(
-                    "video_progress", {"user_id": user_id, "completed": True}
-                ),
-                self._repo.count("mistakes", {"user_id": user_id}),
-                self._repo.count("resources", {"user_id": user_id}),
-            )
-            return {
-                "playlists": playlists,
-                "videos_done": videos_done,
-                "mistakes": mistakes,
-                "resources": resources,
-            }
-
-        async def collect_subject_totals(collection: str) -> Dict[str, int]:
-            return {
-                r["_id"]: r["count"]
-                async for r in self._repo.aggregate_cursor(
-                    collection, subject_total_pipeline(user_id)
-                )
-            }
-
         (
             q_stats,
             p_stats,
@@ -67,24 +32,14 @@ class AnalyticsService:
             p_progress,
             recent,
         ) = await asyncio.gather(
-            self._repo.get_latest_attempt_stats(
-                user_id, "question_attempts", "question_id"
-            ),
-            self._repo.get_latest_attempt_stats(
-                user_id, "pyq_attempts", "pyq_id"
-            ),
-            collect_counts(),
-            self._repo.find_all(
-                "subjects", {}, {"_id": 0, "subject_id": 1, "name": 1, "order": 1}
-            ),
-            collect_subject_totals("questions"),
-            collect_subject_totals("pyqs"),
-            self._repo.get_subject_breakdown(
-                user_id, "question_attempts", "questions", "question_id"
-            ),
-            self._repo.get_subject_breakdown(
-                user_id, "pyq_attempts", "pyqs", "pyq_id"
-            ),
+            self._repo.get_latest_qbank_attempt_stats(user_id),
+            self._repo.get_latest_pyq_attempt_stats(user_id),
+            self._repo.count_user_dashboard_items(user_id),
+            self._repo.list_subjects(),
+            self._repo.get_qbank_subject_totals(user_id),
+            self._repo.get_pyq_subject_totals(user_id),
+            self._repo.get_qbank_subject_breakdown(user_id),
+            self._repo.get_pyq_subject_breakdown(user_id),
             self._get_recent_activity(user_id),
         )
 
@@ -138,10 +93,8 @@ class AnalyticsService:
 
     async def _get_recent_activity(self, user_id: str) -> list:
         qa_recent, pa_recent = await asyncio.gather(
-            self._repo.aggregate(
-                "question_attempts", recent_question_activity_pipeline(user_id)
-            ),
-            self._repo.aggregate("pyq_attempts", recent_pyq_activity_pipeline(user_id)),
+            self._repo.get_recent_question_activity(user_id),
+            self._repo.get_recent_pyq_activity(user_id),
         )
 
         merged = [
@@ -152,57 +105,29 @@ class AnalyticsService:
     async def get_subject_analytics(
         self, user_id: str, subject_id: str
     ) -> List[Dict[str, Any]]:
-        topics = await self._repo.find_all(
-            "topics", {"subject_id": subject_id},
-            {"_id": 0, "topic_id": 1, "name": 1, "order": 1},
+        (
+            topics,
+            q_totals,
+            p_totals,
+            q_progress,
+            p_progress,
+            qids_by_topic,
+            mistakes_count,
+        ) = await asyncio.gather(
+            self._repo.list_topics_for_subject(subject_id),
+            self._repo.get_qbank_topic_totals(user_id, subject_id),
+            self._repo.get_pyq_topic_totals(user_id, subject_id),
+            self._repo.get_qbank_topic_breakdown(user_id, subject_id),
+            self._repo.get_pyq_topic_breakdown(user_id, subject_id),
+            self._repo.get_question_ids_by_topic(subject_id),
+            self._repo.get_mistake_counts_by_topic(user_id, subject_id),
         )
-
-        q_totals = {
-            r["_id"]: r["count"]
-            async for r in self._repo.aggregate_cursor(
-                "questions", topic_total_pipeline(user_id, subject_id)
-            )
-        }
-        p_totals = {
-            r["_id"]: r["count"]
-            async for r in self._repo.aggregate_cursor(
-                "pyqs", topic_total_pipeline(user_id, subject_id)
-            )
-        }
-
-        q_progress = await self._repo.get_topic_breakdown(
-            user_id, "question_attempts", "questions", "question_id", subject_id
-        )
-        p_progress = await self._repo.get_topic_breakdown(
-            user_id, "pyq_attempts", "pyqs", "pyq_id", subject_id
-        )
-
-        qids_by_topic: Dict[str, list] = {}
-        async for q in self._repo.aggregate_cursor(
-            "questions", question_ids_by_topic_pipeline(subject_id)
-        ):
-            qids_by_topic.setdefault(q["topic_id"], []).append(
-                q["question_id"]
-            )
 
         all_qids = [q for qids in qids_by_topic.values() for q in qids]
-        noted_qids = set()
-        if all_qids:
-            async for note in self._repo.aggregate_cursor(
-                "question_notes",
-                notes_by_question_pipeline(user_id, all_qids),
-            ):
-                noted_qids.add(note["_id"])
+        noted_qids = await self._repo.get_noted_question_ids(user_id, all_qids)
         notes_count: Dict[str, int] = {
             tid: sum(1 for q in qids if q in noted_qids)
             for tid, qids in qids_by_topic.items()
-        }
-
-        mistakes_count = {
-            r["_id"]: r["count"]
-            async for r in self._repo.aggregate_cursor(
-                "mistakes", mistakes_by_topic_pipeline(user_id, subject_id)
-            )
         }
 
         rows = []
@@ -244,31 +169,16 @@ class AnalyticsService:
     async def get_topic_analytics(
         self, user_id: str, topic_id: str
     ) -> Optional[Dict[str, Any]]:
-        t = await self._repo.find_one("topics", {"topic_id": topic_id})
+        t = await self._repo.find_topic(topic_id)
         if not t:
             return None
 
-        sid = t["subject_id"]
-        qb_t = await self._repo.count(
-            "questions", {"topic_id": topic_id, "user_id": user_id}
-        )
-        pyq_t = await self._repo.count(
-            "pyqs", {"topic_id": topic_id, "user_id": user_id}
-        )
-
-        async def single_topic_stats(coll, id_f, item_coll):
-            res = await self._repo.aggregate(
-                coll, single_topic_stats_pipeline(user_id, topic_id, id_f, item_coll)
-            )
-            if not res:
-                return {"solved": 0, "correct": 0}
-            return {"solved": res[0]["solved"], "correct": res[0]["correct"]}
-
-        qb_p = await single_topic_stats(
-            "question_attempts", "question_id", "questions"
-        )
-        pyq_p = await single_topic_stats(
-            "pyq_attempts", "pyq_id", "pyqs"
+        qb_t, pyq_t, qb_p, pyq_p, qids = await asyncio.gather(
+            self._repo.count_qbank_for_topic(user_id, topic_id),
+            self._repo.count_pyqs_for_topic(user_id, topic_id),
+            self._repo.get_qbank_topic_stats(user_id, topic_id),
+            self._repo.get_pyq_topic_stats(user_id, topic_id),
+            self._repo.get_question_ids_for_topic(topic_id),
         )
 
         qb_acc = (
@@ -282,18 +192,9 @@ class AnalyticsService:
             else 0.0
         )
 
-        qids = [
-            q["question_id"]
-            async for q in self._repo.aggregate_cursor(
-                "questions", question_ids_for_topic_pipeline(topic_id)
-            )
-        ]
-        notes = await self._repo.count(
-            "question_notes",
-            {"user_id": user_id, "question_id": {"$in": qids}},
-        )
-        mis = await self._repo.count(
-            "mistakes", {"user_id": user_id, "topic_id": topic_id}
+        notes, mis = await asyncio.gather(
+            self._repo.count_notes_for_questions(user_id, qids),
+            self._repo.count_mistakes_for_topic(user_id, topic_id),
         )
 
         return {
