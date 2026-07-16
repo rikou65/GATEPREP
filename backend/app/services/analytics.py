@@ -6,6 +6,17 @@ from time import monotonic
 from typing import Any, Dict, List, Optional
 
 from app.repositories.analytics import AnalyticsRepository
+from app.repositories.analytics_queries import (
+    mistakes_by_topic_pipeline,
+    notes_by_question_pipeline,
+    question_ids_by_topic_pipeline,
+    question_ids_for_topic_pipeline,
+    recent_pyq_activity_pipeline,
+    recent_question_activity_pipeline,
+    single_topic_stats_pipeline,
+    subject_total_pipeline,
+    topic_total_pipeline,
+)
 
 DASHBOARD_CACHE_TTL_SECONDS = 20.0
 _dashboard_cache: Dict[str, tuple[float, Dict[str, Any]]] = {}
@@ -40,10 +51,9 @@ class AnalyticsService:
         async def collect_subject_totals(collection: str) -> Dict[str, int]:
             return {
                 r["_id"]: r["count"]
-                async for r in self._repo.aggregate_cursor(collection, [
-                    {"$match": {"user_id": user_id}},
-                    {"$group": {"_id": "$subject_id", "count": {"$sum": 1}}},
-                ])
+                async for r in self._repo.aggregate_cursor(
+                    collection, subject_total_pipeline(user_id)
+                )
             }
 
         (
@@ -127,75 +137,11 @@ class AnalyticsService:
         return result
 
     async def _get_recent_activity(self, user_id: str) -> list:
-        qa_pipeline = [
-            {"$match": {"user_id": user_id}},
-            {"$sort": {"attempted_at": -1}},
-            {"$limit": 10},
-            {"$lookup": {
-                "from": "questions",
-                "localField": "question_id",
-                "foreignField": "question_id",
-                "as": "q",
-            }},
-            {"$unwind": {"path": "$q", "preserveNullAndEmptyArrays": True}},
-            {"$lookup": {
-                "from": "subjects",
-                "localField": "q.subject_id",
-                "foreignField": "subject_id",
-                "as": "subj",
-            }},
-            {"$lookup": {
-                "from": "topics",
-                "localField": "q.topic_id",
-                "foreignField": "topic_id",
-                "as": "top",
-            }},
-            {"$project": {
-                "_id": 0,
-                "attempt_id": 1, "question_id": 1, "is_correct": 1,
-                "time_taken": 1, "attempted_at": 1,
-                "subject_name": {"$arrayElemAt": ["$subj.name", 0]},
-                "topic_name": {"$arrayElemAt": ["$top.name", 0]},
-                "question_type": "$q.question_type",
-            }},
-        ]
-        pa_pipeline = [
-            {"$match": {"user_id": user_id}},
-            {"$sort": {"attempted_at": -1}},
-            {"$limit": 10},
-            {"$lookup": {
-                "from": "pyqs",
-                "localField": "pyq_id",
-                "foreignField": "pyq_id",
-                "as": "q",
-            }},
-            {"$unwind": {"path": "$q", "preserveNullAndEmptyArrays": True}},
-            {"$lookup": {
-                "from": "subjects",
-                "localField": "q.subject_id",
-                "foreignField": "subject_id",
-                "as": "subj",
-            }},
-            {"$lookup": {
-                "from": "topics",
-                "localField": "q.topic_id",
-                "foreignField": "topic_id",
-                "as": "top",
-            }},
-            {"$project": {
-                "_id": 0,
-                "attempt_id": 1, "pyq_id": 1, "is_correct": 1,
-                "time_taken": 1, "attempted_at": 1,
-                "subject_name": {"$arrayElemAt": ["$subj.name", 0]},
-                "topic_name": {"$arrayElemAt": ["$top.name", 0]},
-                "question_type": "$q.question_type",
-                "year": "$q.year",
-            }},
-        ]
-
         qa_recent, pa_recent = await asyncio.gather(
-            self._repo.aggregate("question_attempts", qa_pipeline),
-            self._repo.aggregate("pyq_attempts", pa_pipeline),
+            self._repo.aggregate(
+                "question_attempts", recent_question_activity_pipeline(user_id)
+            ),
+            self._repo.aggregate("pyq_attempts", recent_pyq_activity_pipeline(user_id)),
         )
 
         merged = [
@@ -213,17 +159,15 @@ class AnalyticsService:
 
         q_totals = {
             r["_id"]: r["count"]
-            async for r in self._repo.aggregate_cursor("questions", [
-                {"$match": {"subject_id": subject_id, "user_id": user_id}},
-                {"$group": {"_id": "$topic_id", "count": {"$sum": 1}}},
-            ])
+            async for r in self._repo.aggregate_cursor(
+                "questions", topic_total_pipeline(user_id, subject_id)
+            )
         }
         p_totals = {
             r["_id"]: r["count"]
-            async for r in self._repo.aggregate_cursor("pyqs", [
-                {"$match": {"subject_id": subject_id, "user_id": user_id}},
-                {"$group": {"_id": "$topic_id", "count": {"$sum": 1}}},
-            ])
+            async for r in self._repo.aggregate_cursor(
+                "pyqs", topic_total_pipeline(user_id, subject_id)
+            )
         }
 
         q_progress = await self._repo.get_topic_breakdown(
@@ -234,10 +178,9 @@ class AnalyticsService:
         )
 
         qids_by_topic: Dict[str, list] = {}
-        async for q in self._repo.aggregate_cursor("questions", [
-            {"$match": {"subject_id": subject_id}},
-            {"$project": {"question_id": 1, "topic_id": 1}},
-        ]):
+        async for q in self._repo.aggregate_cursor(
+            "questions", question_ids_by_topic_pipeline(subject_id)
+        ):
             qids_by_topic.setdefault(q["topic_id"], []).append(
                 q["question_id"]
             )
@@ -247,10 +190,7 @@ class AnalyticsService:
         if all_qids:
             async for note in self._repo.aggregate_cursor(
                 "question_notes",
-                [
-                    {"$match": {"user_id": user_id, "question_id": {"$in": all_qids}}},
-                    {"$group": {"_id": "$question_id"}},
-                ],
+                notes_by_question_pipeline(user_id, all_qids),
             ):
                 noted_qids.add(note["_id"])
         notes_count: Dict[str, int] = {
@@ -260,10 +200,9 @@ class AnalyticsService:
 
         mistakes_count = {
             r["_id"]: r["count"]
-            async for r in self._repo.aggregate_cursor("mistakes", [
-                {"$match": {"user_id": user_id, "subject_id": subject_id}},
-                {"$group": {"_id": "$topic_id", "count": {"$sum": 1}}},
-            ])
+            async for r in self._repo.aggregate_cursor(
+                "mistakes", mistakes_by_topic_pipeline(user_id, subject_id)
+            )
         }
 
         rows = []
@@ -318,34 +257,9 @@ class AnalyticsService:
         )
 
         async def single_topic_stats(coll, id_f, item_coll):
-            p = [
-                {"$match": {"user_id": user_id}},
-                {"$sort": {"attempted_at": -1}},
-                {
-                    "$group": {
-                        "_id": f"${id_f}",
-                        "is_correct": {"$first": "$is_correct"},
-                    }
-                },
-                {
-                    "$lookup": {
-                        "from": item_coll,
-                        "localField": "_id",
-                        "foreignField": id_f,
-                        "as": "i",
-                    }
-                },
-                {"$unwind": "$i"},
-                {"$match": {"i.topic_id": topic_id}},
-                {
-                    "$group": {
-                        "_id": None,
-                        "solved": {"$sum": 1},
-                        "correct": {"$sum": {"$cond": ["$is_correct", 1, 0]}},
-                    }
-                },
-            ]
-            res = await self._repo.aggregate(coll, p)
+            res = await self._repo.aggregate(
+                coll, single_topic_stats_pipeline(user_id, topic_id, id_f, item_coll)
+            )
             if not res:
                 return {"solved": 0, "correct": 0}
             return {"solved": res[0]["solved"], "correct": res[0]["correct"]}
@@ -370,10 +284,9 @@ class AnalyticsService:
 
         qids = [
             q["question_id"]
-            async for q in self._repo.aggregate_cursor("questions", [
-                {"$match": {"topic_id": topic_id}},
-                {"$project": {"question_id": 1}},
-            ])
+            async for q in self._repo.aggregate_cursor(
+                "questions", question_ids_for_topic_pipeline(topic_id)
+            )
         ]
         notes = await self._repo.count(
             "question_notes",
