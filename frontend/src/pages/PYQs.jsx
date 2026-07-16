@@ -1,8 +1,9 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import QuestionViewer from "@/components/QuestionViewer";
 import QuestionForm from "@/components/QuestionForm";
 import FilterPills from "@/components/common/FilterPills";
 import AppSelect from "@/components/common/AppSelect";
+import PaginationControls from "@/components/common/PaginationControls";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Plus, History } from "lucide-react";
@@ -11,19 +12,31 @@ import QueryError from "@/components/common/QueryError";
 import { usePyqs } from "@/features/practice/hooks/usePractice";
 import { useSubjects, useTopics } from "@/features/subjects/hooks/useSubjects";
 
+const PAGE_SIZE = 50;
+
 export default function PYQs() {
   const [filter, setFilter] = useState({
     subject_id: "", topic_id: "", year: "",
     attempted: "", result: "", flag: "",
   });
+  const [page, setPage] = useState(0);
   const [openAdd, setOpenAdd] = useState(false);
   const [editing, setEditing] = useState(null);
 
   const { data: subjects = [] } = useSubjects();
   const { data: topics = [] } = useTopics(filter.subject_id);
-  const { data: pyqData, refetch: refetchPyqs, isError } = usePyqs(filter);
+  const queryFilter = useMemo(() => ({
+    ...filter,
+    limit: PAGE_SIZE,
+    skip: page * PAGE_SIZE,
+  }), [filter, page]);
+  const { data: pyqData, refetch: refetchPyqs, isError } = usePyqs(queryFilter);
   const items = pyqData?.items || [];
   const total = pyqData?.total || 0;
+
+  useEffect(() => {
+    setPage(0);
+  }, [filter]);
 
   const showResultFilter = filter.attempted === "true";
   const setOne = (k, v) => setFilter(prev => {
@@ -155,6 +168,16 @@ export default function PYQs() {
               />
             ))}
           </div>
+        )}
+
+        {total > PAGE_SIZE && (
+          <PaginationControls
+            page={page}
+            pageSize={PAGE_SIZE}
+            total={total}
+            visibleCount={items.length}
+            onPageChange={setPage}
+          />
         )}
 
         <Dialog open={!!editing} onOpenChange={(v) => !v && setEditing(null)}>

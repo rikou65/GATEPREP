@@ -1,9 +1,35 @@
 """Backend integration tests for GATEPREP."""
 from typing import Dict, List, Any
+import asyncio
+from pathlib import Path
 
 import requests
+from motor.motor_asyncio import AsyncIOMotorClient
 
 from tests.support import API
+
+BACKEND_DIR = Path(__file__).resolve().parents[2]
+
+
+def _run_db(coro):
+    return asyncio.run(coro)
+
+
+async def _with_db(fn):
+    from app.core.config import Settings
+
+    settings = Settings(_env_file=str(BACKEND_DIR / ".env"))
+    use_tls = "mongodb+srv://" in settings.MONGO_URL
+    client = AsyncIOMotorClient(
+        settings.MONGO_URL,
+        tls=use_tls,
+        tlsAllowInvalidCertificates=True,
+        serverSelectionTimeoutMS=5000,
+    )
+    try:
+        return await fn(client[settings.DB_NAME])
+    finally:
+        client.close()
 
 
 # --------- Public endpoints ---------
@@ -74,6 +100,22 @@ class TestDashboardAndQuestions:
         for q in questions:
             assert "user_progress" in q
             assert set(q["user_progress"].keys()) >= {"count", "correct", "last_correct"}
+
+    def test_questions_pagination_contract(self, auth_headers: Dict[str, str]) -> None:
+        first = requests.get(f"{API}/questions", headers=auth_headers, params={"limit": 5, "skip": 0})
+        second = requests.get(f"{API}/questions", headers=auth_headers, params={"limit": 5, "skip": 5})
+
+        assert first.status_code == 200
+        assert second.status_code == 200
+        first_data = first.json()["data"]
+        second_data = second.json()["data"]
+
+        assert first_data["total"] >= 12
+        assert len(first_data["items"]) == 5
+        assert len(second_data["items"]) == 5
+        first_ids = {q["question_id"] for q in first_data["items"]}
+        second_ids = {q["question_id"] for q in second_data["items"]}
+        assert first_ids.isdisjoint(second_ids)
 
 
 # --------- Attempt grading ---------
@@ -180,6 +222,47 @@ class TestPYQs:
         assert d["attempt"]["is_correct"]
         assert d["solution"]
 
+    def test_pyqs_pagination_contract(
+        self, auth_headers: Dict[str, str], subjects: List[Dict[str, Any]]
+    ) -> None:
+        sid = subjects[0]["subject_id"]
+        topic = requests.get(f"{API}/subjects/{sid}/topics", headers=auth_headers).json()["data"][0]
+        created_ids = []
+        try:
+            for i in range(3):
+                payload: Dict[str, Any] = {
+                    "subject_id": sid,
+                    "topic_id": topic["topic_id"],
+                    "year": 2024 - i,
+                    "question_type": "MCQ",
+                    "question_text": f"TEST_Paginated PYQ {i}",
+                    "options": ["A", "B", "C", "D"],
+                    "correct_answer": "0",
+                    "solution": "Pagination test solution",
+                    "source": "TEST_PAGINATION",
+                }
+                created = requests.post(f"{API}/pyqs", headers=auth_headers, json=payload)
+                assert created.status_code == 200
+                created_ids.append(created.json()["data"]["pyq_id"])
+
+            first = requests.get(f"{API}/pyqs", headers=auth_headers, params={"limit": 2, "skip": 0})
+            second = requests.get(f"{API}/pyqs", headers=auth_headers, params={"limit": 2, "skip": 2})
+
+            assert first.status_code == 200
+            assert second.status_code == 200
+            first_data = first.json()["data"]
+            second_data = second.json()["data"]
+
+            assert first_data["total"] >= 4
+            assert len(first_data["items"]) == 2
+            assert len(second_data["items"]) == 2
+            first_ids = {p["pyq_id"] for p in first_data["items"]}
+            second_ids = {p["pyq_id"] for p in second_data["items"]}
+            assert first_ids.isdisjoint(second_ids)
+        finally:
+            for pyq_id in created_ids:
+                requests.delete(f"{API}/pyqs/{pyq_id}", headers=auth_headers)
+
 
 # --------- Resources ---------
 class TestResources:
@@ -243,6 +326,78 @@ class TestPlaylists:
         body = r.json()
         assert not body["success"]
         assert body["error"]["code"] == "invalid_url"
+
+    def test_progress_update_targets_only_active_video(
+        self, auth_headers: Dict[str, str], subjects: List[Dict[str, Any]]
+    ) -> None:
+        from app.core.ids import new_id
+        from app.core.time import iso, now_utc
+
+        playlist_id = new_id("pl")
+        video_a = new_id("vid")
+        video_b = new_id("vid")
+        subject_id = subjects[0]["subject_id"]
+
+        async def seed(db):
+            await db.playlists.insert_one({
+                "playlist_id": playlist_id,
+                "user_id": "test_auth_user",
+                "subject_id": subject_id,
+                "title": "TEST Progress Playlist",
+                "youtube_playlist_id": "TEST_PROGRESS_PLAYLIST",
+                "thumbnail_url": "",
+                "created_at": iso(now_utc()),
+            })
+            await db.videos.insert_many([
+                {
+                    "video_id": video_a,
+                    "playlist_id": playlist_id,
+                    "youtube_video_id": "TEST_PROGRESS_A",
+                    "title": "Video A",
+                    "position": 0,
+                    "duration": 600,
+                },
+                {
+                    "video_id": video_b,
+                    "playlist_id": playlist_id,
+                    "youtube_video_id": "TEST_PROGRESS_B",
+                    "title": "Video B",
+                    "position": 1,
+                    "duration": 600,
+                },
+            ])
+
+        async def cleanup(db):
+            await db.video_progress.delete_many({"video_id": {"$in": [video_a, video_b]}})
+            await db.videos.delete_many({"playlist_id": playlist_id})
+            await db.playlists.delete_one({"playlist_id": playlist_id})
+
+        _run_db(_with_db(seed))
+        try:
+            first = requests.post(
+                f"{API}/videos/{video_a}/progress",
+                headers=auth_headers,
+                json={"watch_percentage": 40, "watch_time": 240, "completed": False},
+            )
+            second = requests.post(
+                f"{API}/videos/{video_b}/progress",
+                headers=auth_headers,
+                json={"watch_percentage": 100, "watch_time": 600, "completed": True},
+            )
+
+            assert first.status_code == 200
+            assert second.status_code == 200
+
+            playlist = requests.get(f"{API}/playlists/{playlist_id}", headers=auth_headers)
+            assert playlist.status_code == 200
+            videos = {v["video_id"]: v for v in playlist.json()["data"]["videos"]}
+
+            assert videos[video_a]["progress"]["watch_percentage"] == 40
+            assert videos[video_a]["progress"]["completed"] is False
+            assert videos[video_b]["progress"]["watch_percentage"] == 100
+            assert videos[video_b]["progress"]["completed"] is True
+        finally:
+            _run_db(_with_db(cleanup))
 
 
 # --------- Question creation ---------

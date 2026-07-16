@@ -4,13 +4,6 @@ from typing import Any, Dict, List, Optional
 
 from app.core.ids import new_id
 from app.core.time import iso, now_utc
-from app.repositories.practice_queries import (
-    build_mistake_list_pipeline,
-    build_pyq_count_pipeline,
-    build_pyq_list_pipeline,
-    build_question_count_pipeline,
-    build_question_list_pipeline,
-)
 from app.repositories.questions import QuestionRepository, QuestionAttemptRepository, QuestionNoteRepository
 from app.repositories.pyqs import PYQRepository, PYQAttemptRepository
 from app.repositories.mistakes import MistakeRepository
@@ -56,18 +49,26 @@ class QuestionService:
         limit: int = 50,
         skip: int = 0,
     ) -> Dict[str, Any]:
-        data_pipeline = build_question_list_pipeline(
-            user_id, subject_id, topic_id, question_type,
-            attempted, result, flag, skip, limit,
+        docs = await self._repo.list_for_user(
+            user_id,
+            subject_id,
+            topic_id,
+            question_type,
+            attempted,
+            result,
+            flag,
+            limit,
+            skip,
         )
-        count_pipeline = build_question_count_pipeline(
-            user_id, subject_id, topic_id, question_type,
-            attempted, result, flag,
+        total = await self._repo.count_for_user(
+            user_id,
+            subject_id,
+            topic_id,
+            question_type,
+            attempted,
+            result,
+            flag,
         )
-
-        docs = await self._repo.list_with_aggregation(data_pipeline, limit)
-        count_res = await self._repo.list_with_aggregation(count_pipeline, 1)
-        total = count_res[0]["total"] if count_res else 0
         return {"items": docs, "total": total}
 
     async def get_question(self, question_id: str, user_id: str) -> Optional[Dict[str, Any]]:
@@ -198,18 +199,26 @@ class PYQService:
         limit: int = 50,
         skip: int = 0,
     ) -> Dict[str, Any]:
-        data_pipeline = build_pyq_list_pipeline(
-            user_id, subject_id, topic_id, year,
-            attempted, result, flag, skip, limit,
+        docs = await self._repo.list_for_user(
+            user_id,
+            subject_id,
+            topic_id,
+            year,
+            attempted,
+            result,
+            flag,
+            limit,
+            skip,
         )
-        count_pipeline = build_pyq_count_pipeline(
-            user_id, subject_id, topic_id, year,
-            attempted, result, flag,
+        total = await self._repo.count_for_user(
+            user_id,
+            subject_id,
+            topic_id,
+            year,
+            attempted,
+            result,
+            flag,
         )
-
-        docs = await self._repo.list_with_aggregation(data_pipeline, limit)
-        count_res = await self._repo.list_with_aggregation(count_pipeline, 1)
-        total = count_res[0]["total"] if count_res else 0
         return {"items": docs, "total": total}
 
     async def create_pyq(self, pyq_id: str, user_id: str, body) -> Dict[str, Any]:
@@ -304,13 +313,12 @@ class MistakeService:
         topic_id: Optional[str] = None,
         mistake_type: Optional[str] = None,
     ) -> list:
-        pipeline = build_mistake_list_pipeline(
+        return await self._repo.list_for_user(
             user_id,
             subject_id,
             topic_id,
             mistake_type,
         )
-        return await self._repo.list_with_aggregation(pipeline)
 
     async def create_mistake(self, user_id: str, question_id: str, mistake_type: str, note: str) -> Optional[Dict[str, Any]]:
         q = await self._repo.find_question(question_id, user_id)

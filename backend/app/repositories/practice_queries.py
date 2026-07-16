@@ -132,7 +132,7 @@ def build_question_list_pipeline(
     ]
 
     _append_attempt_and_flag_filters(pipeline, attempted, result, flag)
-    _append_list_tail(pipeline, skip, limit)
+    _append_list_tail(pipeline, skip, limit, "question_id")
     return pipeline
 
 
@@ -168,6 +168,7 @@ def build_question_count_pipeline(
         skip=0,
         limit=1,
     )
+    _remove_list_tail(pipeline)
     pipeline.append({"$count": "total"})
     return pipeline
 
@@ -301,7 +302,7 @@ def build_pyq_list_pipeline(
     ]
 
     _append_attempt_and_flag_filters(pipeline, attempted, result, flag)
-    _append_list_tail(pipeline, skip, limit)
+    _append_list_tail(pipeline, skip, limit, "pyq_id")
     return pipeline
 
 
@@ -337,6 +338,7 @@ def build_pyq_count_pipeline(
         skip=0,
         limit=1,
     )
+    _remove_list_tail(pipeline)
     pipeline.append({"$count": "total"})
     return pipeline
 
@@ -402,10 +404,10 @@ def _append_attempt_and_flag_filters(
         pipeline.append({"$match": {"flags": flag}})
 
 
-def _append_list_tail(pipeline: list, skip: int, limit: int) -> None:
+def _append_list_tail(pipeline: list, skip: int, limit: int, stable_id_field: str) -> None:
     pipeline.extend(
         [
-            {"$sort": {"created_at": -1}},
+            {"$sort": {"created_at": -1, stable_id_field: 1}},
             {"$skip": skip},
             {"$limit": limit},
             {
@@ -422,3 +424,7 @@ def _append_list_tail(pipeline: list, skip: int, limit: int) -> None:
             },
         ]
     )
+
+
+def _remove_list_tail(pipeline: list) -> None:
+    del pipeline[-4:]

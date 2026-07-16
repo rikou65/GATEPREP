@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { CheckCircle2, Circle, ArrowLeft, ChevronRight, RotateCcw } from "lucide-react";
@@ -11,99 +11,39 @@ import {
   useSaveVideoProgress,
   useVideoNotes,
 } from "@/features/playlists/hooks/usePlaylists";
-
-function formatDuration(seconds) {
-  if (!seconds) return "0m";
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  if (h === 0) return `${m}m`;
-  if (m === 0) return `${h}h`;
-  return `${h}h ${m}m`;
-}
-
-const findResumeIndex = (videos) => {
-  let bestIdx = 0;
-  let bestIsInProgress = false;
-  let bestTime = null;
-  videos.forEach((v, i) => {
-    const pct = v.progress?.watch_percentage || 0;
-    const t = v.progress?.last_watched_at;
-    const isInProgress = pct > 0 && pct < 100 && !v.progress?.completed;
-    if (isInProgress && (!bestIsInProgress || (t && bestTime && t > bestTime))) {
-      bestIdx = i;
-      bestIsInProgress = true;
-      bestTime = t;
-    } else if (!bestIsInProgress) {
-      if (t && (!bestTime || t > bestTime)) {
-        bestIdx = i;
-        bestTime = t;
-      }
-    }
-  });
-  return bestIdx;
-};
+import {
+  formatDuration,
+  useActiveQueueScroll,
+  usePlaylistDraft,
+  useVideoNotesDraft,
+} from "@/features/playlists/hooks/usePlaylistDetailUi";
 
 export default function PlaylistDetail() {
   const { id } = useParams();
-  const [playlist, setPlaylist] = useState(null);
-  const [activeIdx, setActiveIdx] = useState(0);
-  const [resumed, setResumed] = useState(false);
   const playerRef = useRef(null);
   const trackRef = useRef(null);
   const lastPersistRef = useRef(0);
   const queueRef = useRef(null);
   const playerContainerRef = useRef(null);
 
-  const [notes, setNotes] = useState("");
-  const [lastSavedNotes, setLastSavedNotes] = useState("");
   const { data: playlistData, isError, refetch } = usePlaylist(id);
-  const active = playlist?.videos?.[activeIdx];
+  const {
+    playlist,
+    activeIdx,
+    setActiveIdx,
+    active,
+    setPlaylist,
+    updateVideoProgress,
+  } = usePlaylistDraft(playlistData);
   const { data: videoNotes } = useVideoNotes(active?.video_id);
   const saveVideoNotes = useSaveVideoNotes(active?.video_id);
   const saveVideoProgress = useSaveVideoProgress(id);
-
-  useEffect(() => {
-    if (playlistData) setPlaylist(playlistData);
-  }, [playlistData]);
-
-  // Resume to the best video on initial load
-  useEffect(() => {
-    if (playlist?.videos?.length && !resumed) {
-      const idx = findResumeIndex(playlist.videos);
-      setActiveIdx(idx);
-      setResumed(true);
-    }
-  }, [playlist, resumed]);
-
-  useEffect(() => {
-    if (!active) {
-      setNotes("");
-      setLastSavedNotes("");
-      return;
-    }
-    const content = videoNotes?.note_content || "";
-    setNotes(content);
-    setLastSavedNotes(content);
-  }, [active?.video_id, videoNotes?.note_content]);
-
-  // Scroll the vertical queue to keep the active row visible
-  useEffect(() => {
-    if (!queueRef.current || !playlist?.videos?.length) return;
-    const rows = queueRef.current.querySelectorAll('[data-testid^="video-row-"]');
-    if (rows[activeIdx]) {
-      rows[activeIdx].scrollIntoView({ behavior: "smooth", block: "nearest" });
-    }
-  }, [activeIdx]);
-
-  const saveNotes = async () => {
-    if (!active || notes === lastSavedNotes) return;
-    try {
-      await saveVideoNotes.mutateAsync(notes);
-      setLastSavedNotes(notes);
-    } catch {
-      toast.error("Failed to save notes");
-    }
-  };
+  const { notes, setNotes, saveNotes } = useVideoNotesDraft(
+    active?.video_id,
+    videoNotes,
+    saveVideoNotes,
+  );
+  useActiveQueueScroll(queueRef, activeIdx, playlist?.videos);
 
   // Destroy and recreate YouTube player on active video change to prevent stale callbacks
   useEffect(() => {
@@ -165,26 +105,6 @@ export default function PlaylistDetail() {
   };
   const stopTracking = () => { if (trackRef.current) clearInterval(trackRef.current); trackRef.current = null; };
 
-  const updateLocalProgress = (idx, pct, watchTime, completed) => {
-    setPlaylist((prev) => {
-      if (!prev) return prev;
-      return {
-        ...prev,
-        videos: prev.videos.map((v, i) => i === idx
-          ? {
-              ...v,
-              progress: {
-                ...(v.progress || {}),
-                watch_percentage: pct,
-                watch_time: typeof watchTime === "number" ? watchTime : 0,
-                ...(typeof completed === "boolean" ? { completed } : {}),
-              },
-            }
-          : v),
-      };
-    });
-  };
-
   const captureProgress = (persist) => {
     const p = playerRef.current;
     if (!p?.getCurrentTime) return;
@@ -198,7 +118,7 @@ export default function PlaylistDetail() {
   const syncProgress = async (pct, watchTime, options = {}) => {
     const video = playlist?.videos?.[activeIdx];
     if (!video) return;
-    updateLocalProgress(activeIdx, pct, watchTime, options.completed);
+    updateVideoProgress(activeIdx, pct, watchTime, options.completed);
     if (options.persist === false) return;
     lastPersistRef.current = Date.now();
     try {

@@ -3,6 +3,7 @@ import QuestionViewer from "@/components/QuestionViewer";
 import QuestionForm from "@/components/QuestionForm";
 import FilterPills from "@/components/common/FilterPills";
 import AppSelect from "@/components/common/AppSelect";
+import PaginationControls from "@/components/common/PaginationControls";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Plus, FileQuestion } from "lucide-react";
@@ -12,11 +13,14 @@ import { toast } from "sonner";
 import { useQuestions, useQuestionNotes, useSaveQuestionNotes } from "@/features/practice/hooks/usePractice";
 import { useSubjects, useTopics } from "@/features/subjects/hooks/useSubjects";
 
+const PAGE_SIZE = 50;
+
 export default function QuestionBank() {
   const [filter, setFilter] = useState({
     subject_id: "", topic_id: "", question_type: "",
     attempted: "", result: "", flag: "",
   });
+  const [page, setPage] = useState(0);
   const [openAdd, setOpenAdd] = useState(false);
   const [editing, setEditing] = useState(null); // question object or null
 
@@ -27,13 +31,22 @@ export default function QuestionBank() {
 
   const { data: subjects = [] } = useSubjects();
   const { data: topics = [] } = useTopics(filter.subject_id);
-  const { data: questionData, refetch: refetchQuestions, isError } = useQuestions(filter);
+  const queryFilter = useMemo(() => ({
+    ...filter,
+    limit: PAGE_SIZE,
+    skip: page * PAGE_SIZE,
+  }), [filter, page]);
+  const { data: questionData, refetch: refetchQuestions, isError } = useQuestions(queryFilter);
   const items = questionData?.items || [];
   const total = questionData?.total || 0;
 
   useEffect(() => {
-    setActiveIndex(0);
+    setPage(0);
   }, [filter]);
+
+  useEffect(() => {
+    setActiveIndex(0);
+  }, [filter, page]);
 
   const activeQ = items[activeIndex];
   const { data: noteData } = useQuestionNotes(activeQ?.question_id);
@@ -212,7 +225,9 @@ export default function QuestionBank() {
             <div className="col-span-12 xl:col-span-8 space-y-6">
               <div className="border border-border rounded-3xl p-6 relative overflow-hidden bg-card/10 backdrop-blur-md">
                 <div className="flex justify-between items-center mb-4">
-                  <span className="text-xs font-mono text-muted-foreground">Question {activeIndex + 1} of {total}</span>
+                  <span className="text-xs font-mono text-muted-foreground">
+                    Question {page * PAGE_SIZE + activeIndex + 1} of {total}
+                  </span>
                   <div className="flex items-center gap-2">
                     <Button
                       variant="outline"
@@ -320,6 +335,16 @@ export default function QuestionBank() {
               </div>
             </div>
           </div>
+        )}
+
+        {total > PAGE_SIZE && (
+          <PaginationControls
+            page={page}
+            pageSize={PAGE_SIZE}
+            total={total}
+            visibleCount={items.length}
+            onPageChange={setPage}
+          />
         )}
 
         <Dialog open={!!editing} onOpenChange={(v) => !v && setEditing(null)}>

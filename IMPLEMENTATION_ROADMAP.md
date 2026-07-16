@@ -140,15 +140,15 @@ maintainability, and then scale.
 - [ ] Extract large UI orchestration only where it reduces complexity:
   - resource viewer state
   - playlist player lifecycle
-  - playlist queue window and centering
-  - notes dirty-state and autosave behavior
+  - [x] playlist queue visibility behavior moved into feature hooks
+  - [x] playlist notes dirty-state and autosave behavior moved into feature hooks
 - [x] Centralize route paths and API paths so components never hardcode `/admin/*`, ports, or OAuth URLs
 - [x] Adopt React Query infrastructure: QueryClientProvider, typed API client, query keys, endpoint modules
 - [ ] Separate playlist concerns inside the frontend:
   - player lifecycle and progress sync
   - resume behavior
-  - queue window and centering logic
-  - notes dirty-state and autosave behavior
+  - [x] queue visibility logic
+  - [x] notes dirty-state and autosave behavior
 - [x] Add app-level error handling:
   - 404 page
   - 500/error boundary
@@ -175,9 +175,10 @@ maintainability, and then scale.
   - latest-attempt accuracy behavior
   - playlist resume target selection
   - watched videos remaining watched when another video starts playing
-  - progress writes always targeting the correct active video
+  - [x] progress writes always targeting the correct active video
   - notes blur with unchanged content not triggering save toast
   - queue auto-centering and 3-card window behavior
+  - [x] Question Bank/PYQ pagination API contracts
 - [ ] Add frontend coverage for critical flows:
   - login callback
   - Resources Drive connected state
@@ -236,7 +237,7 @@ maintainability, and then scale.
   - `video_progress` by `(user_id, video_id)` and `(user_id, last_watched_at)`
   - `video_notes` by `(user_id, video_id)`
 - [ ] Add pagination:
-  - Question Bank and PYQs at 50 per page
+  - [x] Question Bank and PYQs at 50 per page
   - staging queue pagination or virtualization
 - [ ] Make resource streaming truly streaming and avoid loading full Drive files into memory
 - [ ] Add skeleton/loading states across major pages

@@ -2,6 +2,11 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
+from app.repositories.practice_queries import (
+    build_pyq_count_pipeline,
+    build_pyq_list_pipeline,
+)
+
 
 class PYQRepository:
     def __init__(self, db):
@@ -28,10 +33,52 @@ class PYQRepository:
         )
         return r.deleted_count
 
-    async def list_with_aggregation(
-        self, pipeline: List[Dict[str, Any]], limit: int
+    async def list_for_user(
+        self,
+        user_id: str,
+        subject_id: Optional[str] = None,
+        topic_id: Optional[str] = None,
+        year: Optional[int] = None,
+        attempted: Optional[str] = None,
+        result: Optional[str] = None,
+        flag: Optional[str] = None,
+        limit: int = 50,
+        skip: int = 0,
     ) -> List[Dict[str, Any]]:
+        pipeline = build_pyq_list_pipeline(
+            user_id,
+            subject_id,
+            topic_id,
+            year,
+            attempted,
+            result,
+            flag,
+            skip,
+            limit,
+        )
         return await self._db.pyqs.aggregate(pipeline).to_list(limit)
+
+    async def count_for_user(
+        self,
+        user_id: str,
+        subject_id: Optional[str] = None,
+        topic_id: Optional[str] = None,
+        year: Optional[int] = None,
+        attempted: Optional[str] = None,
+        result: Optional[str] = None,
+        flag: Optional[str] = None,
+    ) -> int:
+        pipeline = build_pyq_count_pipeline(
+            user_id,
+            subject_id,
+            topic_id,
+            year,
+            attempted,
+            result,
+            flag,
+        )
+        docs = await self._db.pyqs.aggregate(pipeline).to_list(1)
+        return docs[0]["total"] if docs else 0
 
     async def get_flags(self, user_id: str, pyq_id: str) -> List[str]:
         flags = await self._db.pyq_flags.find(

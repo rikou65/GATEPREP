@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
+from app.repositories.practice_queries import build_mistake_list_pipeline
+
 
 class MistakeRepository:
     def __init__(self, db):
@@ -21,10 +23,20 @@ class MistakeRepository:
             {"user_id": user_id, "question_id": question_id}
         )
 
-    async def list_with_aggregation(
-        self, pipeline: List[Dict[str, Any]], limit: int = 500
+    async def list_for_user(
+        self,
+        user_id: str,
+        subject_id: Optional[str] = None,
+        topic_id: Optional[str] = None,
+        mistake_type: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        return await self._db.mistakes.aggregate(pipeline).to_list(limit)
+        pipeline = build_mistake_list_pipeline(
+            user_id,
+            subject_id,
+            topic_id,
+            mistake_type,
+        )
+        return await self._db.mistakes.aggregate(pipeline).to_list(500)
 
     async def find_question(self, question_id: str, user_id: str) -> Optional[Dict[str, Any]]:
         return await self._db.questions.find_one(
