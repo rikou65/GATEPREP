@@ -27,6 +27,10 @@ class TestAuthGating:
     def test_questions_requires_auth(self) -> None:
         r = requests.get(f"{API}/questions")
         assert r.status_code == 401
+        body = r.json()
+        assert body["success"] is False
+        assert body["error"]["code"] == "http_error"
+        assert body["error"]["message"] == "Not authenticated"
 
     def test_dashboard_requires_auth(self) -> None:
         r = requests.get(f"{API}/dashboard")
@@ -41,6 +45,13 @@ class TestAuthGating:
         assert r.status_code == 200
         u = r.json()["data"]["user"]
         assert u.get("user_id")
+
+    def test_dev_login_does_not_return_session_token(self) -> None:
+        r = requests.post(f"{API}/auth/dev-login")
+        assert r.status_code == 200
+        data = r.json()["data"]
+        assert "session_token" not in data
+        assert data["user"]["user_id"]
 
 
 # --------- Dashboard / Questions list ---------

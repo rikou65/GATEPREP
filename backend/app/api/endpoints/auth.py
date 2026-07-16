@@ -87,7 +87,7 @@ async def dev_login(
         max_age=604800,
         samesite="lax",
     )
-    return ok({"session_token": result["session_token"], "user": result["user"]})
+    return ok({"user": result["user"]})
 
 
 @router.post("/auth/supabase-session", response_model=Envelope[AuthSessionOut])
@@ -119,7 +119,7 @@ async def supabase_session(
         path="/",
         max_age=7 * 24 * 3600,
     )
-    return ok({"session_token": session_token, "user": user})
+    return ok({"user": user})
 
 
 @router.get("/auth/me", response_model=Envelope[MeOut])

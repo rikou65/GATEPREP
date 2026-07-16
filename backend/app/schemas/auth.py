@@ -37,7 +37,6 @@ class UserOut(OutModel):
 
 
 class AuthSessionOut(OutModel):
-    session_token: Optional[str] = None
     user: UserOut
 
 

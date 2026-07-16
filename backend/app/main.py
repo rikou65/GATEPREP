@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from starlette.middleware.cors import CORSMiddleware
 
@@ -105,11 +105,30 @@ def _mount_routes(app: FastAPI) -> None:
 
 
 def _setup_error_handlers(app: FastAPI) -> None:
+    @app.exception_handler(HTTPException)
+    async def http_exception_handler(request: Request, exc: HTTPException):
+        message = exc.detail if isinstance(exc.detail, str) else "Request failed"
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={
+                "success": False,
+                "error": {"code": "http_error", "message": message},
+            },
+            headers=getattr(exc, "headers", None),
+        )
+
     @app.exception_handler(Exception)
     async def global_exception_handler(request: Request, exc: Exception):
         logger.error(f"Unhandled exception: {exc}", exc_info=True)
         return JSONResponse(
-            status_code=500, content={"detail": "Internal server error"}
+            status_code=500,
+            content={
+                "success": False,
+                "error": {
+                    "code": "internal_error",
+                    "message": "Internal server error",
+                },
+            },
         )
 
     @app.middleware("http")
