@@ -240,7 +240,7 @@ maintainability, and then scale.
   - [x] Question Bank and PYQs at 50 per page
   - staging queue pagination or virtualization
 - [ ] Make resource streaming truly streaming and avoid loading full Drive files into memory
-- [ ] Add skeleton/loading states across major pages
+- [x] Add skeleton/loading states across major pages
 - [ ] Optimize playlist queue behavior for long playlists with a fixed 3-card viewport and controlled navigation instead of raw scroll dependence
 - [ ] Add global search:
   - backend `/api/search`

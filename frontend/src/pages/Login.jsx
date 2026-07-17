@@ -190,11 +190,11 @@ export default function Login() {
   return (
     <div className="h-screen overflow-hidden bg-[#f6f1e1] text-[#1b2233]">
       <main className="grid h-full w-full grid-cols-1 overflow-hidden bg-[#f6f1e1] lg:grid-cols-[1.02fr_34px_1fr]">
-        <section className="relative hidden min-h-0 overflow-hidden bg-[linear-gradient(155deg,#121727_0%,#1f2433_100%)] px-14 py-8 text-[#f6f1e1] lg:flex lg:flex-col">
+        <section className="relative hidden min-h-0 overflow-hidden bg-[linear-gradient(155deg,#121727_0%,#1f2433_100%)] px-14 py-[clamp(1.25rem,2.6vh,2rem)] text-[#f6f1e1] lg:flex lg:flex-col">
           <div className="absolute inset-0 opacity-[0.045] [background-image:linear-gradient(#f6f1e1_1px,transparent_1px),linear-gradient(90deg,#f6f1e1_1px,transparent_1px)] [background-size:42px_42px]" />
           <div className="absolute bottom-0 right-0 h-80 w-80 bg-[radial-gradient(circle,rgba(201,154,62,.1),transparent_60%)]" />
 
-          <div className="relative z-10 mb-7 flex items-center justify-between">
+          <div className="relative z-10 flex items-center justify-between">
             <div className="flex items-center gap-4 font-mono text-3xl font-semibold tracking-[0.04em]">
               <GraduationCap className="h-12 w-12" strokeWidth={1.7} />
               GATEPREP
@@ -204,7 +204,7 @@ export default function Login() {
             </div>
           </div>
 
-          <div className="relative z-10 my-auto">
+          <div className="relative z-10 mt-[clamp(2rem,5.2vh,3.8rem)]">
             <div className="mb-4 flex items-center gap-3 font-mono text-xs uppercase tracking-[0.16em] text-[#e1c77e]">
               <span className="h-[7px] w-[7px] rounded-full bg-[#e1c77e] shadow-[0_0_0_4px_rgba(201,154,62,.18)]" />
               Admit card
@@ -217,11 +217,11 @@ export default function Login() {
               One syllabus-aligned workspace for question banks, PYQs, playlists and notes — built to get you through exam day, not just through the syllabus.
             </p>
 
-            <ul className="mt-6 border-y border-[#f6f1e1]/15">
+            <ul className="mt-[clamp(1.25rem,3vh,1.5rem)] border-y border-[#f6f1e1]/15">
               {featureItems.map(({ title, text }, index) => (
                 <li
                   key={title}
-                  className={`flex gap-4 py-3 ${index !== featureItems.length - 1 ? "border-b border-[#f6f1e1]/15" : ""}`}
+                  className={`flex gap-4 py-[clamp(0.55rem,1.65vh,0.75rem)] ${index !== featureItems.length - 1 ? "border-b border-[#f6f1e1]/15" : ""}`}
                 >
                   <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border border-[#e1c77e] text-[#e1c77e]">
                     <Check className="h-3 w-3" strokeWidth={2.4} />
@@ -235,7 +235,7 @@ export default function Login() {
             </ul>
           </div>
 
-          <div className="relative z-10 mt-5 flex items-center justify-between">
+          <div className="relative z-10 mt-auto flex items-center justify-between pt-[clamp(1.25rem,3vh,2rem)]">
             <div className="flex h-20 w-20 rotate-[-9deg] items-center justify-center rounded-full border border-dashed border-[#c99a3e]/60 p-2 text-center font-mono text-[7.5px] uppercase leading-[1.45] tracking-[0.06em] text-[#e1c77e]">
               Valid for<br />all attempts<br />· 2027 ·
             </div>
@@ -247,7 +247,9 @@ export default function Login() {
         </section>
 
         <div className="relative hidden bg-[#f6f1e1] lg:flex lg:items-center lg:justify-center" aria-hidden="true">
-          <div className="absolute inset-y-0 left-1/2 border-l-2 border-dashed border-[#1b2233]/20" />
+          <div className="absolute left-[65%] top-0 h-9 w-9 -translate-x-1/2 -translate-y-1/2 rounded-full border border-[#1b2233]/10 bg-[#e6ddbf] shadow-[inset_0_-8px_14px_rgba(27,34,51,0.06)]" />
+          <div className="absolute bottom-9 left-[65%] top-9 border-l-2 border-dashed border-[#1b2233]/20" />
+          <div className="absolute bottom-0 left-[65%] h-9 w-9 -translate-x-1/2 translate-y-1/2 rounded-full border border-[#1b2233]/10 bg-[#e6ddbf] shadow-[inset_0_8px_14px_rgba(27,34,51,0.06)]" />
         </div>
 
         <section className="flex h-full min-h-0 items-center justify-center overflow-hidden bg-[#f6f1e1] px-7 py-8 lg:px-14">

@@ -3,10 +3,11 @@ import { Link } from "react-router-dom";
 import { ChevronRight } from "lucide-react";
 import Layout from "@/components/Layout";
 import QueryError from "@/components/common/QueryError";
+import { CardGridSkeleton } from "@/components/common/skeletons";
 import { useSubjects } from "@/features/subjects/hooks/useSubjects";
 
 export default function Subjects() {
-  const { data: subjects = [], isError, refetch } = useSubjects();
+  const { data: subjects = [], isLoading, isError, refetch } = useSubjects();
   if (isError) return (
     <Layout title="Subjects">
       <QueryError onRetry={refetch} />
@@ -20,22 +21,26 @@ export default function Subjects() {
           <h1 className="text-3xl sm:text-4xl font-bold tracking-tight mt-1">Subjects</h1>
           <p className="text-sm text-muted-foreground mt-1">Official GATE CSE syllabus · system-owned, cannot be edited.</p>
         </div>
-        <div className="grid md:grid-cols-2 gap-3">
-          {subjects.map(s => (
-            <Link
-              key={s.subject_id}
-              to={`/subjects/${s.subject_id}`}
-              data-testid={`subject-card-${s.subject_id}`}
-              className="group border border-border rounded-lg p-5 bg-card/40 hover:border-foreground/40 transition-colors flex items-center justify-between"
-            >
-              <div>
-                <div className="text-xs mono text-muted-foreground">#{String(s.order + 1).padStart(2, "0")}</div>
-                <div className="text-base font-medium mt-1">{s.name}</div>
-              </div>
-              <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-transform group-hover:translate-x-0.5" />
-            </Link>
-          ))}
-        </div>
+        {isLoading ? (
+          <CardGridSkeleton count={8} columns="grid-cols-1 md:grid-cols-2" />
+        ) : (
+          <div className="grid md:grid-cols-2 gap-3">
+            {subjects.map(s => (
+              <Link
+                key={s.subject_id}
+                to={`/subjects/${s.subject_id}`}
+                data-testid={`subject-card-${s.subject_id}`}
+                className="group border border-border rounded-lg p-5 bg-card/40 hover:border-foreground/40 transition-colors flex items-center justify-between"
+              >
+                <div>
+                  <div className="text-xs mono text-muted-foreground">#{String(s.order + 1).padStart(2, "0")}</div>
+                  <div className="text-base font-medium mt-1">{s.name}</div>
+                </div>
+                <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-transform group-hover:translate-x-0.5" />
+              </Link>
+            ))}
+          </div>
+        )}
       </div>
     </Layout>
   );

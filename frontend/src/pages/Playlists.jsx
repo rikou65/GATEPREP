@@ -14,6 +14,7 @@ import { ListVideo, Plus, Play, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import Layout from "@/components/Layout";
 import QueryError from "@/components/common/QueryError";
+import { CardGridSkeleton } from "@/components/common/skeletons";
 
 function formatDuration(seconds) {
   if (!seconds) return "0m";
@@ -29,8 +30,8 @@ export default function Playlists() {
   const [form, setForm] = useState({ youtube_url: "", subject_id: "" });
   const [loading, setLoading] = useState(false);
 
-  const { data: playlists = [], isError, refetch } = usePlaylists();
-  const { data: subjects = [] } = useSubjects();
+  const { data: playlists = [], isLoading, isError, refetch } = usePlaylists();
+  const { data: subjects = [], isLoading: subjectsLoading } = useSubjects();
   const importPlaylist = useImportPlaylist();
   const deletePlaylist = useDeletePlaylist();
 
@@ -117,7 +118,20 @@ export default function Playlists() {
           </Dialog>
         </div>
 
-        {playlists.length === 0 ? (
+        {isLoading || subjectsLoading ? (
+          <div className="space-y-10">
+            <div className="space-y-4">
+              <div className="flex items-baseline justify-between border-b border-border pb-2">
+                <div className="space-y-2">
+                  <div className="h-3 w-24 rounded bg-white/[0.07] animate-pulse" />
+                  <div className="h-6 w-44 rounded bg-white/[0.07] animate-pulse" />
+                </div>
+                <div className="h-3 w-20 rounded bg-white/[0.07] animate-pulse" />
+              </div>
+              <CardGridSkeleton count={3} columns="grid-cols-1 sm:grid-cols-2 lg:grid-cols-3" />
+            </div>
+          </div>
+        ) : playlists.length === 0 ? (
           <div className="text-sm text-muted-foreground border border-dashed border-border rounded-lg p-12 text-center flex flex-col items-center gap-2">
             <ListVideo className="w-5 h-5" />
             No playlists yet. Paste a YouTube playlist URL to import.

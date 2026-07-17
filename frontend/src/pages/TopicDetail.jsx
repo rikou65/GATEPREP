@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { BookCheck, History, FileText, AlertOctagon } from "lucide-react";
 import Layout from "@/components/Layout";
 import QueryError from "@/components/common/QueryError";
+import { PageHeaderSkeleton, StatGridSkeleton } from "@/components/common/skeletons";
 import { useTopicAnalytics } from "@/features/dashboard/hooks/useDashboard";
 
 export default function TopicDetail() {
@@ -17,7 +18,14 @@ export default function TopicDetail() {
 
   if (!data) return (
     <Layout title="Topic Detail">
-      <div className="text-sm text-muted-foreground">Loading…</div>
+      <div className="space-y-8">
+        <PageHeaderSkeleton />
+        <StatGridSkeleton count={4} />
+        <div className="flex gap-3">
+          <div className="h-10 w-40 rounded-md bg-white/[0.07] animate-pulse" />
+          <div className="h-10 w-32 rounded-md bg-white/[0.07] animate-pulse" />
+        </div>
+      </div>
     </Layout>
   );
   const t = data.topic;

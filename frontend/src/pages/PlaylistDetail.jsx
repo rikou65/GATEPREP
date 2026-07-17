@@ -5,6 +5,7 @@ import { CheckCircle2, Circle, ArrowLeft, ChevronRight, RotateCcw } from "lucide
 import { toast } from "sonner";
 import Layout from "@/components/Layout";
 import QueryError from "@/components/common/QueryError";
+import { PlaylistDetailSkeleton } from "@/components/common/skeletons";
 import {
   usePlaylist,
   useSaveVideoNotes,
@@ -179,7 +180,7 @@ export default function PlaylistDetail() {
 
   if (!playlist) return (
     <Layout title="Playlist Detail">
-      <div className="text-sm text-muted-foreground">Loading…</div>
+      <PlaylistDetailSkeleton />
     </Layout>
   );
 

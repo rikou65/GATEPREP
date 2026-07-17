@@ -5,6 +5,7 @@ import { CheckCircle2, AlertOctagon, Loader2, RefreshCw, Trash2, X } from "lucid
 import { toast } from "sonner";
 import Layout from "@/components/Layout";
 import QueryError from "@/components/common/QueryError";
+import { StagingListSkeleton } from "@/components/common/skeletons";
 import { formatMathText, renderContentWithTables } from "@/lib/mathFormat";
 import {
   useApproveReadyStaging,
@@ -181,10 +182,7 @@ useEffect(() => {
 
         {/* Staging Items List Section */}
         {loading ? (
-          <div className="flex flex-col items-center justify-center py-20 border border-dashed border-border rounded-xl">
-            <Loader2 className="w-8 h-8 animate-spin text-muted-foreground mb-4" />
-            <p className="text-sm text-muted-foreground">Loading staging items...</p>
-          </div>
+          <StagingListSkeleton />
         ) : (
           <>
             {/* Orphan Triage */}

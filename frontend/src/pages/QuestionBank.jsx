@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Plus, FileQuestion } from "lucide-react";
 import Layout from "@/components/Layout";
 import QueryError from "@/components/common/QueryError";
+import { QuestionViewerSkeleton } from "@/components/common/skeletons";
 import { toast } from "sonner";
 import { useQuestions, useQuestionNotes, useSaveQuestionNotes } from "@/features/practice/hooks/usePractice";
 import { useSubjects, useTopics } from "@/features/subjects/hooks/useSubjects";
@@ -36,7 +37,7 @@ export default function QuestionBank() {
     limit: PAGE_SIZE,
     skip: page * PAGE_SIZE,
   }), [filter, page]);
-  const { data: questionData, refetch: refetchQuestions, isError } = useQuestions(queryFilter);
+  const { data: questionData, refetch: refetchQuestions, isLoading, isError } = useQuestions(queryFilter);
   const items = questionData?.items || [];
   const total = questionData?.total || 0;
 
@@ -214,7 +215,9 @@ export default function QuestionBank() {
           </div>
         </div>
 
-        {items.length === 0 ? (
+        {isLoading ? (
+          <QuestionViewerSkeleton />
+        ) : items.length === 0 ? (
           <div className="text-sm text-muted-foreground border border-dashed border-border rounded-lg p-12 text-center flex flex-col items-center gap-2">
             <FileQuestion className="w-5 h-5" />
             No questions match these filters. Try clearing or click “Add Question” to create one.

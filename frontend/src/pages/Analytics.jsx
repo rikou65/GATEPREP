@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import Layout from "@/components/Layout";
 import QueryError from "@/components/common/QueryError";
+import { ChartSkeleton, PageHeaderSkeleton, StatGridSkeleton } from "@/components/common/skeletons";
 import { useDashboard, useSubjectAnalyticsLoader } from "@/features/dashboard/hooks/useDashboard";
 
 /* ─── colour palette ─── */
@@ -273,7 +274,22 @@ export default function Analytics() {
 
   if (!data) return (
     <Layout title="Analytics">
-      <div className="text-sm text-muted-foreground">Loading…</div>
+      <div className="space-y-10">
+        <PageHeaderSkeleton />
+        <div>
+          <div className="h-3 w-36 rounded bg-white/[0.07] animate-pulse mb-3" />
+          <StatGridSkeleton count={6} columns="grid-cols-2 md:grid-cols-4 lg:grid-cols-6" />
+        </div>
+        <div className="grid lg:grid-cols-2 gap-5">
+          <ChartSkeleton />
+          <ChartSkeleton />
+        </div>
+        <div className="grid lg:grid-cols-3 gap-5">
+          <ChartSkeleton height="h-[250px]" />
+          <ChartSkeleton height="h-[190px]" />
+          <ChartSkeleton height="h-[190px]" />
+        </div>
+      </div>
     </Layout>
   );
 

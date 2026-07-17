@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { BookCheck, History, FileText, Sparkles, ArrowUpRight } from "lucide-react";
 import Layout from "@/components/Layout";
 import QueryError from "@/components/common/QueryError";
+import { CardGridSkeleton, PageHeaderSkeleton, StatGridSkeleton } from "@/components/common/skeletons";
 import { useSubject } from "@/features/subjects/hooks/useSubjects";
 import { useSubjectAnalytics } from "@/features/dashboard/hooks/useDashboard";
 
@@ -19,7 +20,11 @@ export default function SubjectDetail() {
 
   if (!subject) return (
     <Layout title="Subject Detail">
-      <div className="text-sm text-muted-foreground">Loading…</div>
+      <div className="space-y-8">
+        <PageHeaderSkeleton />
+        <StatGridSkeleton count={4} />
+        <CardGridSkeleton count={6} columns="grid-cols-1 md:grid-cols-2" />
+      </div>
     </Layout>
   );
 

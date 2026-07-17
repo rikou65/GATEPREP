@@ -6,13 +6,14 @@ import { toast } from "sonner";
 import Layout from "@/components/Layout";
 import QueryError from "@/components/common/QueryError";
 import AppSelect from "@/components/common/AppSelect";
+import { CardGridSkeleton } from "@/components/common/skeletons";
 import { useDeleteMistake, useMistakes } from "@/features/practice/hooks/usePractice";
 import { useSubjects } from "@/features/subjects/hooks/useSubjects";
 
 export default function MistakeLab() {
   const [filter, setFilter] = useState({ subject_id: "", mistake_type: "" });
   const { data: subjects = [] } = useSubjects();
-  const { data: items = [], isError, refetch } = useMistakes(filter);
+  const { data: items = [], isLoading, isError, refetch } = useMistakes(filter);
   const deleteMistake = useDeleteMistake();
 
   if (isError) return (
@@ -61,7 +62,9 @@ export default function MistakeLab() {
             ]}
           />
         </div>
-        {items.length === 0 ? (
+        {isLoading ? (
+          <CardGridSkeleton count={4} columns="grid-cols-1" />
+        ) : items.length === 0 ? (
           <div className="text-sm text-muted-foreground border border-dashed border-border rounded-lg p-12 text-center flex flex-col items-center gap-2">
             <AlertOctagon className="w-5 h-5" />
             No mistakes logged yet. Mistakes flagged from Question Bank will appear here.

@@ -20,6 +20,7 @@ import PdfCanvasViewer from "@/components/PdfCanvasViewer";
 import Layout from "@/components/Layout";
 import QueryError from "@/components/common/QueryError";
 import AppSelect from "@/components/common/AppSelect";
+import { TableSkeleton } from "@/components/common/skeletons";
 
 const TYPES = ["Books", "Notes", "Question Banks", "PYQ Collections", "Formula Sheets", "Reference Material"];
 const driveSyncKey = (userId) => (userId ? `driveSyncNeeded:${userId}` : null);
@@ -32,9 +33,9 @@ function formatSize(bytes) {
 }
 
 export default function Resources() {
-  const { data: subjects = [] } = useSubjects();
+  const { data: subjects = [], isLoading: subjectsLoading } = useSubjects();
   const [filter, setFilter] = useState({ subject_id: "", resource_type: "" });
-  const { data: items = [], isError, refetch } = useResources(filter);
+  const { data: items = [], isLoading, isError, refetch } = useResources(filter);
   const { data: driveStatus } = useDriveStatus();
   const syncDrive = useSyncDrive();
   const refreshDrive = useRefreshDrive();
@@ -50,7 +51,7 @@ export default function Resources() {
   const [viewer, setViewer] = useState(null);
   const [viewerNotes, setViewerNotes] = useState({ content: "", important_pages: [] });
   const fileRef = useRef(null);
-  const blobCache = useRef(new Map()); // resource_id -> Blob (cached for this session)
+  const blobCache = useRef(new Map()); // resource_id -> Blob (kept only while viewer is open)
   const [lastSync, setLastSync] = useState(null);
   const closingViewerRef = useRef(false);
   const uploading = uploadResource.isPending;
@@ -95,6 +96,12 @@ export default function Resources() {
     };
   }, [viewer]);
 
+  const releaseViewerMemory = (currentViewer) => {
+    if (!currentViewer) return;
+    if (currentViewer.resource_id) blobCache.current.delete(currentViewer.resource_id);
+    if (currentViewer?.isBlob && currentViewer.embed_url) URL.revokeObjectURL(currentViewer.embed_url);
+  };
+
   const closeViewer = () => {
     if (!viewer) return;
     if (window.history.state?.viewerOpen && !closingViewerRef.current) {
@@ -102,7 +109,7 @@ export default function Resources() {
       window.history.back();
       closingViewerRef.current = false;
     }
-    if (viewer?.isBlob && viewer.embed_url) URL.revokeObjectURL(viewer.embed_url);
+    releaseViewerMemory(viewer);
     setViewer(null);
     setViewerNotes({ content: "", important_pages: [] });
   };
@@ -126,7 +133,7 @@ export default function Resources() {
   useEffect(() => {
     const handlePopState = () => {
       if (viewer && !closingViewerRef.current) {
-        if (viewer?.isBlob && viewer.embed_url) URL.revokeObjectURL(viewer.embed_url);
+        releaseViewerMemory(viewer);
         setViewer(null);
         setViewerNotes({ content: "", important_pages: [] });
       }
@@ -187,6 +194,14 @@ export default function Resources() {
   const remove = async (id) => { await deleteResource.mutateAsync(id); };
 
   const openResource = async (r) => {
+    setViewer({
+      resource_id: r.resource_id,
+      title: r.title,
+      blob: null,
+      view_url: r.external_url || "",
+      isPdf: true,
+      loading: true,
+    });
     try {
       // Fetch notes + important pages in parallel with the view url request
       const notesPromise = resourceViewer.notes(r.resource_id)
@@ -194,7 +209,16 @@ export default function Resources() {
         .catch(() => ({ content: "", important_pages: [] }));
 
       const data = await resourceViewer.view(r.resource_id);
-      if (!data?.embed_url && data?.kind !== "drive") { toast.error("No preview available"); return; }
+      if (!data?.embed_url && data?.kind !== "drive") {
+        toast.error("No preview available");
+        if (window.history.state?.viewerOpen) {
+          closingViewerRef.current = true;
+          window.history.back();
+          closingViewerRef.current = false;
+        }
+        setViewer(null);
+        return;
+      }
 
       // Resolve notes (don't block UI on it though — viewer can render while notes load)
       notesPromise.then((n) => setViewerNotes({
@@ -237,6 +261,11 @@ export default function Resources() {
         toast.error(message);
       } else {
         toast.error("Could not open");
+      }
+      if (window.history.state?.viewerOpen) {
+        closingViewerRef.current = true;
+        window.history.back();
+        closingViewerRef.current = false;
       }
       setViewer(null);
     }
@@ -502,7 +531,20 @@ export default function Resources() {
             </div>
           )}
 
-          {items.length === 0 ? (
+          {isLoading || subjectsLoading ? (
+            <div className="space-y-10">
+              <section>
+                <div className="flex items-baseline justify-between border-b border-border pb-2 mb-4">
+                  <div className="space-y-2">
+                    <div className="h-3 w-24 rounded bg-white/[0.07] animate-pulse" />
+                    <div className="h-6 w-44 rounded bg-white/[0.07] animate-pulse" />
+                  </div>
+                  <div className="h-3 w-20 rounded bg-white/[0.07] animate-pulse" />
+                </div>
+                <TableSkeleton rows={4} columns={6} />
+              </section>
+            </div>
+          ) : items.length === 0 ? (
             <div className="text-sm text-muted-foreground border border-dashed border-border rounded-lg p-12 text-center flex flex-col items-center gap-2">
               <FolderArchive className="w-5 h-5" /> No resources yet.
             </div>

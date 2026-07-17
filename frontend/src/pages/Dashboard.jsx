@@ -4,6 +4,7 @@ import { useDashboard } from "@/features/dashboard/hooks/useDashboard";
 import { ArrowUpRight, Target, BookCheck, History, ListVideo, AlertOctagon, FolderArchive, TrendingUp, Library } from "lucide-react";
 import Layout from "@/components/Layout";
 import QueryError from "@/components/common/QueryError";
+import { CardGridSkeleton, PageHeaderSkeleton, StatGridSkeleton } from "@/components/common/skeletons";
 
 const StatCard = ({ icon: Icon, label, value, suffix, testId }) => (
   <div className="border border-border rounded-lg p-5 bg-card/40 hover:border-border/80 transition-colors" data-testid={testId}>
@@ -29,7 +30,14 @@ export default function Dashboard() {
 
   if (!data) return (
     <Layout title="Dashboard">
-      <div className="text-sm text-muted-foreground">Loading…</div>
+      <div className="space-y-8">
+        <PageHeaderSkeleton />
+        <StatGridSkeleton count={8} />
+        <div className="space-y-3">
+          <SkeletonSectionHeader />
+          <CardGridSkeleton count={6} />
+        </div>
+      </div>
     </Layout>
   );
   const s = data.summary;
@@ -149,6 +157,16 @@ const accuracyTone = (acc, hasAttempts) => {
   if (acc >= 50) return "text-amber-400";
   return "text-red-400";
 };
+
+const SkeletonSectionHeader = () => (
+  <div className="flex items-end justify-between">
+    <div className="space-y-2">
+      <div className="h-3 w-24 rounded bg-white/[0.07] animate-pulse" />
+      <div className="h-6 w-56 rounded bg-white/[0.07] animate-pulse" />
+    </div>
+    <div className="h-3 w-16 rounded bg-white/[0.07] animate-pulse" />
+  </div>
+);
 
 const barTone = (acc, hasAttempts) => {
   if (!hasAttempts) return "bg-muted-foreground/20";

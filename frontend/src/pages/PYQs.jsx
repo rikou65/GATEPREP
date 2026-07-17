@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Plus, History } from "lucide-react";
 import Layout from "@/components/Layout";
 import QueryError from "@/components/common/QueryError";
+import { CardGridSkeleton } from "@/components/common/skeletons";
 import { usePyqs } from "@/features/practice/hooks/usePractice";
 import { useSubjects, useTopics } from "@/features/subjects/hooks/useSubjects";
 
@@ -30,7 +31,7 @@ export default function PYQs() {
     limit: PAGE_SIZE,
     skip: page * PAGE_SIZE,
   }), [filter, page]);
-  const { data: pyqData, refetch: refetchPyqs, isError } = usePyqs(queryFilter);
+  const { data: pyqData, refetch: refetchPyqs, isLoading, isError } = usePyqs(queryFilter);
   const items = pyqData?.items || [];
   const total = pyqData?.total || 0;
 
@@ -149,7 +150,9 @@ export default function PYQs() {
           </div>
         </div>
 
-        {items.length === 0 ? (
+        {isLoading ? (
+          <CardGridSkeleton count={4} columns="grid-cols-1" />
+        ) : items.length === 0 ? (
           <div className="text-sm text-muted-foreground border border-dashed border-border rounded-lg p-12 text-center flex flex-col items-center gap-2">
             <History className="w-5 h-5" />
             No PYQs match these filters. Try clearing or click “Add PYQ” to create one.

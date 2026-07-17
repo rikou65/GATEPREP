@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { LogOut, HardDrive, Youtube, CheckCircle2, Plug, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import Layout from "@/components/Layout";
+import { Skeleton } from "@/components/common/skeletons";
 
 const processedDriveParams = new Set();
 const processedYoutubeParams = new Set();
@@ -111,11 +112,22 @@ export default function Settings() {
         <div className="border border-border rounded-lg p-5 space-y-3">
           <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Profile</div>
           <div className="flex items-center gap-4">
-            {user?.picture && <img src={user.picture} alt="" className="w-12 h-12 rounded-full border border-border" />}
-            <div>
-              <div className="text-sm font-medium">{user?.name}</div>
-              <div className="text-xs text-muted-foreground mono">{user?.email}</div>
-            </div>
+            {user?.picture ? (
+              <img src={user.picture} alt="" className="w-12 h-12 rounded-full border border-border" />
+            ) : (
+              <Skeleton className="w-12 h-12 rounded-full" />
+            )}
+            {user ? (
+              <div>
+                <div className="text-sm font-medium">{user?.name}</div>
+                <div className="text-xs text-muted-foreground mono">{user?.email}</div>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <Skeleton className="h-4 w-32" />
+                <Skeleton className="h-3 w-44" />
+              </div>
+            )}
           </div>
         </div>
 
