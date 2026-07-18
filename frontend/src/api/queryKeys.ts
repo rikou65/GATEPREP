@@ -41,4 +41,5 @@ export const queryKeys = {
     jobs: ["staging", "jobs"] as const,
   },
   dashboard: ["dashboard"] as const,
+  search: (query: string, limit?: number) => ["search", query, limit] as const,
 };

@@ -4,8 +4,9 @@ import { useAuth } from "@/context/AuthContext";
 import {
   LayoutDashboard, BookOpen, FileQuestion, History, ListVideo,
   FolderArchive, AlertOctagon, BarChart3, Settings, LogOut,
-  GraduationCap, UploadCloud, ListChecks
+  GraduationCap, UploadCloud, ListChecks, Search
 } from "lucide-react";
+import { openGlobalSearch } from "@/components/GlobalSearch";
 
 const NAV = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, id: "nav-dashboard" },
@@ -43,6 +44,18 @@ export default function Layout({ children, title, hideSidebar = false }) {
             </div>
           </div>
           <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto">
+            <button
+              type="button"
+              onClick={openGlobalSearch}
+              className="mb-3 flex w-full items-center justify-between rounded-md border border-border bg-background/40 px-3 py-2 text-left text-xs text-muted-foreground transition-colors hover:border-border/80 hover:bg-secondary/50 hover:text-foreground"
+              data-testid="global-search-trigger"
+            >
+              <span className="inline-flex items-center gap-2">
+                <Search className="h-3.5 w-3.5" />
+                Search
+              </span>
+              <kbd className="rounded border border-border bg-card px-1.5 py-0.5 text-[9px]">Ctrl K</kbd>
+            </button>
             {NAV.map((n) => (
               <NavLink
                 key={n.to}

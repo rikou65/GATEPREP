@@ -126,7 +126,11 @@ export default function Resources() {
   // closes the viewer instead of navigating to the previous page.
   useEffect(() => {
     if (viewer) {
+      document.body.dataset.studySurface = "true";
       window.history.pushState({ viewerOpen: true }, "");
+      return () => {
+        delete document.body.dataset.studySurface;
+      };
     }
   }, [viewer]);
 

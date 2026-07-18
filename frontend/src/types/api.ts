@@ -115,3 +115,14 @@ export type DashboardSummary = {
   total_mistakes: number;
   resources_uploaded: number;
 };
+
+export type SearchResult = {
+  type: "subject" | "topic" | "question" | "pyq" | "resource" | "playlist" | "video" | string;
+  id: string;
+  title: string;
+  subtitle?: string;
+  url: string;
+  excerpt?: string;
+  badge?: string;
+  metadata?: Record<string, unknown>;
+};

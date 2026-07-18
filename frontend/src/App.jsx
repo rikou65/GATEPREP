@@ -7,6 +7,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { queryClient } from "@/api/client";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import AppErrorBoundary from "@/components/AppErrorBoundary";
+import GlobalSearch from "@/components/GlobalSearch";
 
 const Login = lazy(() => import("@/pages/Login"));
 const AuthCallback = lazy(() => import("@/pages/AuthCallback"));
@@ -69,6 +70,7 @@ export default function App() {
             <AppErrorBoundary>
               <AppRouter />
             </AppErrorBoundary>
+            <GlobalSearch />
             <Toaster theme="dark" position="top-right" />
           </AuthProvider>
         </QueryClientProvider>

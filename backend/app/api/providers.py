@@ -30,6 +30,7 @@ from app.repositories.resources import (
     ResourceNoteRepository,
     ResourceRepository,
 )
+from app.repositories.search import SearchRepository
 from app.repositories.sessions import SessionRepository
 from app.repositories.staging import (
     ImportedQuestionRepository,
@@ -57,6 +58,7 @@ from app.services.practice import (
     QuestionService,
 )
 from app.services.resources import ResourceService
+from app.services.search import SearchService
 from app.services.staging import StagingService
 from app.services.subjects import SubjectService
 from app.services.youtube import YouTubeService
@@ -267,6 +269,12 @@ def get_migration_repo(
     return MigrationRepository(db)
 
 
+def get_search_repo(
+    db: Any = Depends(get_db),
+) -> SearchRepository:
+    return SearchRepository(db)
+
+
 # ── Services ───────────────────────────────────────────────────────────────
 
 
@@ -425,3 +433,9 @@ def get_identity_repair_service(
     db: Any = Depends(get_db),
 ) -> IdentityRepairService:
     return IdentityRepairService(db)
+
+
+def get_search_service(
+    repo: SearchRepository = Depends(get_search_repo),
+) -> SearchService:
+    return SearchService(repo)

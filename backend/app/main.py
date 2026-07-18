@@ -16,6 +16,7 @@ from app.api.endpoints.auth import router as auth_router
 from app.api.endpoints.playlists import router as playlists_router
 from app.api.endpoints.practice import router as practice_router
 from app.api.endpoints.resources import router as resources_router
+from app.api.endpoints.search import router as search_router
 from app.api.endpoints.staging import router as staging_router
 from app.api.endpoints.subjects import router as subjects_router
 from app.api.endpoints.youtube import router as youtube_router
@@ -111,6 +112,7 @@ def _mount_routes(app: FastAPI) -> None:
     api.include_router(analytics_router)
     api.include_router(playlists_router)
     api.include_router(resources_router)
+    api.include_router(search_router)
     api.include_router(youtube_router)
     api.include_router(staging_router, prefix="/data")
 

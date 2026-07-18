@@ -242,9 +242,9 @@ maintainability, and then scale.
 - [ ] Make resource streaming truly streaming and avoid loading full Drive files into memory
 - [x] Add skeleton/loading states across major pages
 - [ ] Optimize playlist queue behavior for long playlists with a fixed 3-card viewport and controlled navigation instead of raw scroll dependence
-- [ ] Add global search:
-  - backend `/api/search`
-  - frontend Cmd/Ctrl+K overlay
+- [x] Add global search:
+  - [x] backend `/api/search`
+  - [x] frontend Cmd/Ctrl+K overlay
   - questions, PYQs, resources, subjects, and topics
 - [ ] Add optional Redis caching for dashboard and analytics after indexing is complete
 
